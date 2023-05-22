@@ -1,11 +1,11 @@
-import { PrismaClient, TransactionRecord, TransactionType } from '@prisma/client';
+import { PaymentRecordStatus, PrismaClient, TransactionRecord, TransactionType } from '@prisma/client';
 import { HeliusEnhancedTransaction } from '../../models/helius-enhanced-transaction.model.js';
 import { PaymentRecordService } from '../database/payment-record-service.database.service.js';
 import { MerchantService } from '../database/merchant-service.database.service.js';
-import { paymentSessionResolve } from '../shopify/payment-session-resolve.service.js';
 import { getCustomerFromHeliusEnhancedTransaction } from '../../utilities/get-customer.utility.js';
+import { makePaymentSessionResolve } from '../shopify/payment-session-resolve.service.js';
+import axios from 'axios';
 
-// I'm not sure I love adding prisma into this but it should work for how we're handling testing now
 export const processDiscoveredPaymentTransaction = async (
     transactionRecord: TransactionRecord,
     transaction: HeliusEnhancedTransaction,
@@ -63,8 +63,9 @@ export const processDiscoveredPaymentTransaction = async (
     // value fails, we also want to try again later, so basically we should either try/catch here and then
     // handle it here, or we can throw inside of paymentSessionResolve if it parses weird, and still handle it here,
     // either way, i'm thinking we want to handle it here
-    // TODO: Summerize why we're try/catching here but throwing elsewhere
     try {
+        const paymentSessionResolve = makePaymentSessionResolve(axios);
+
         const resolvePaymentResponse = await paymentSessionResolve(
             paymentRecord.shopGid,
             merchant.shop,
@@ -75,13 +76,18 @@ export const processDiscoveredPaymentTransaction = async (
         const redirectUrl =
             resolvePaymentResponse.data.paymentSessionResolve.paymentSession.nextAction.context.redirectUrl;
 
+        if (redirectUrl == null) {
+            throw new Error('Redirect url not found on payment session resolve response.');
+        }
+
         // If this were to throw, then we could just try again or add it to the retry queue, adding to the retry queue
         // works also because we would just make the same calls to shopify and because of idemoency, it would just
         // work
         await paymentRecordService.updatePaymentRecord(paymentRecord, {
-            status: 'paid',
+            status: PaymentRecordStatus.completed,
             redirectUrl: redirectUrl,
             transactionSignature: transaction.signature,
+            completedAt: new Date(),
         });
     } catch (error) {
         // TODO: Handle the error by adding it to the retry queue

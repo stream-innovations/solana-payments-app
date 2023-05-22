@@ -1,5 +1,9 @@
 import axios from 'axios';
 import { shopifyGraphQLEndpoint } from '../../configs/endpoints.config.js';
+import {
+    PaymentAppConfigureResponse,
+    parseAndValidatePaymentAppConfigureResponse,
+} from '../../models/shopify-graphql-responses/payment-app-configure-response.model.js';
 
 const paymentAppConfigureMutation = `
     mutation PaymentsAppConfigure($externalHandle: String, $ready: Boolean!) {
@@ -16,31 +20,39 @@ const paymentAppConfigureMutation = `
     }
 `;
 
-export const paymentAppConfigure = async (externalHandle: string, ready: boolean, shop: string, token: string) => {
-    const headers = {
-        'content-type': 'application/json',
-        'X-Shopify-Access-Token': token,
-    };
-    const graphqlQuery = {
-        query: paymentAppConfigureMutation,
-        variables: {
-            externalHandle,
-            ready,
-        },
-    };
+export const makePaymentAppConfigure = (axiosInstance: typeof axios) => {
+    return async (externalHandle: string, ready: boolean, shop: string, token: string) => {
+        const headers = {
+            'content-type': 'application/json',
+            'X-Shopify-Access-Token': token,
+        };
+        const graphqlQuery = {
+            query: paymentAppConfigureMutation,
+            variables: {
+                externalHandle,
+                ready,
+            },
+        };
 
-    try {
-        const response = await axios({
-            url: shopifyGraphQLEndpoint(shop),
-            method: 'POST',
-            headers: headers,
-            data: JSON.stringify(graphqlQuery),
-        });
+        let paymentAppConfigureResponse: PaymentAppConfigureResponse;
 
-        return response.data;
-    } catch (e) {
-        if (e instanceof Error) {
-            throw e;
+        try {
+            const response = await axiosInstance({
+                url: shopifyGraphQLEndpoint(shop),
+                method: 'POST',
+                headers: headers,
+                data: JSON.stringify(graphqlQuery),
+            });
+
+            paymentAppConfigureResponse = parseAndValidatePaymentAppConfigureResponse(response.data);
+        } catch (e) {
+            if (e instanceof Error) {
+                throw e;
+            } else {
+                throw new Error('Error configuring payment app.');
+            }
         }
-    }
+
+        return paymentAppConfigureResponse;
+    };
 };

@@ -1,4 +1,4 @@
-import { Merchant, PrismaClient, RefundRecord } from '@prisma/client';
+import { Merchant, PrismaClient, RefundRecord, RefundRecordStatus } from '@prisma/client';
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import queryString from 'query-string';
 import { decode } from '../../../../utilities/string.utility.js';
@@ -7,12 +7,13 @@ import {
     RejectRefundRequest,
     parseAndValidateRejectRefundRequest,
 } from '../../../../models/reject-refund-request.model.js';
-import { refundSessionReject } from '../../../../services/shopify/refund-session-reject.service.js';
 import { RejectRefundResponse } from '../../../../models/shopify-graphql-responses/reject-refund-response.model.js';
 import { RefundRecordService } from '../../../../services/database/refund-record-service.database.service.js';
 import { MerchantService } from '../../../../services/database/merchant-service.database.service.js';
 import { withAuth } from '../../../../utilities/token-authenticate.utility.js';
 import { MerchantAuthToken } from '../../../../models/merchant-auth-token.model.js';
+import { makeRefundSessionReject } from '../../../../services/shopify/refund-session-reject.service.js';
+import axios from 'axios';
 
 export const rejectRefund = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
     const prisma = new PrismaClient();
@@ -31,7 +32,7 @@ export const rejectRefund = async (event: APIGatewayProxyEventV2): Promise<APIGa
     }
 
     try {
-        rejectRefundRequest = parseAndValidateRejectRefundRequest(event.body);
+        rejectRefundRequest = parseAndValidateRejectRefundRequest(event.queryStringParameters);
     } catch (error) {
         return requestErrorResponse(error);
     }
@@ -64,7 +65,7 @@ export const rejectRefund = async (event: APIGatewayProxyEventV2): Promise<APIGa
         return requestErrorResponse(new Error('Refund record does not belong to merchant.'));
     }
 
-    if (refundRecord.status !== 'pending') {
+    if (refundRecord.status !== RefundRecordStatus.pending) {
         return requestErrorResponse(new Error('Refund record is not pending.'));
     }
 
@@ -77,6 +78,7 @@ export const rejectRefund = async (event: APIGatewayProxyEventV2): Promise<APIGa
 
     let rejectRefundResponse: RejectRefundResponse;
     try {
+        const refundSessionReject = makeRefundSessionReject(axios);
         rejectRefundResponse = await refundSessionReject(
             refundRecord.shopGid,
             'PROCESSING_ERROR', // Hardcoding this for now, shopify docs are slightly unclear on what the possible values are
@@ -92,7 +94,7 @@ export const rejectRefund = async (event: APIGatewayProxyEventV2): Promise<APIGa
 
     try {
         await refundRecordService.updateRefundRecord(refundRecord, {
-            status: 'rejected',
+            status: RefundRecordStatus.rejected,
         });
     } catch (error) {
         return requestErrorResponse(error);
