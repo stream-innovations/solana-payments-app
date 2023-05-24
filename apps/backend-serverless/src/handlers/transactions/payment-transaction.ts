@@ -46,8 +46,12 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
 
         const trmService = new TrmService(TRM_API_KEY);
 
-        const decodedBody = event.body ? decode(event.body) : '';
-        const body = queryString.parse(decodedBody);
+        if (event.body == null) {
+            return requestErrorResponse(new Error('No body provided.'));
+        }
+
+        const body = JSON.parse(event.body);
+
         const account = body['account'] as string | null;
 
         if (account == null) {
@@ -60,7 +64,13 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
             return requestErrorResponse(error);
         }
 
-        const gasKeypair = await fetchGasKeypair();
+        let gasKeypair: web3.Keypair;
+
+        try {
+            gasKeypair = await fetchGasKeypair();
+        } catch (error) {
+            return requestErrorResponse(error);
+        }
 
         try {
             paymentRecord = await paymentRecordService.getPaymentRecord({
@@ -84,9 +94,11 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
 
         const singleUseKeypair = await generateSingleUseKeypairFromPaymentRecord(paymentRecord);
 
-        // we should probably try / catch this but if it fails we keep going, just log
-        // the rent redemption later isn't worth failing on customer ux
-        await uploadSingleUseKeypair(singleUseKeypair, paymentRecord);
+        try {
+            await uploadSingleUseKeypair(singleUseKeypair, paymentRecord);
+        } catch (error) {
+            // TODO: Log this error in sentry
+        }
 
         try {
             paymentTransaction = await fetchPaymentTransaction(

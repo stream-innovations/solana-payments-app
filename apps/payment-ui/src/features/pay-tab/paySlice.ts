@@ -9,7 +9,14 @@ interface PayState {
     paymentId: string | null;
     payerAccount: string | null;
     paymentDetails: PaymentDetails | null;
+    paymentError: PayError | null;
     payingToken: PayingToken;
+}
+
+interface PayError {
+    errorTitle: string;
+    errorDetail: string;
+    errorRedirect: string;
 }
 
 interface PaymentDetails {
@@ -40,35 +47,38 @@ const initalState: PayState = {
     paymentMethod: 'connect-wallet',
     paymentId: null,
     payerAccount: null,
-    paymentDetails: initialPaymentDetails,
+    paymentDetails: null,
     payingToken: PayingToken.USDC,
+    paymentError: null,
 };
 
-export const timerTick = createAsyncThunk<PaymentDetails, void>(
+export const timerTick = createAsyncThunk<{ details: PaymentDetails | null; error: PayError | null }, void>(
     'pay/timerTick',
-    async (_, { getState }): Promise<PaymentDetails> => {
+    async (_, { getState }): Promise<{ details: PaymentDetails | null; error: PayError | null }> => {
         const state = getState() as RootState;
         const paymentId = state.pay.paymentId;
         if (paymentId != null) {
             const response = await axios.get(
                 `https://uj1ctqe20k.execute-api.us-east-1.amazonaws.com/payment-status?id=${paymentId}`
             );
+            const paymentStatusResponse = response.data.paymentStatus;
+            const errorResponse = response.data.error;
+
             return {
-                merchantDisplayName: response.data.merchantDisplayName,
-                totalAmountUSDCDisplay: response.data.totalAmountUSDCDisplay,
-                totalAmountFiatDisplay: response.data.totalAmountFiatDisplay,
-                cancelUrl: response.data.cancelUrl,
-                completed: response.data.completed,
-                redirectUrl: response.data.redirectUrl,
+                details: {
+                    merchantDisplayName: paymentStatusResponse.merchantDisplayName,
+                    totalAmountUSDCDisplay: paymentStatusResponse.totalAmountUSDCDisplay,
+                    totalAmountFiatDisplay: paymentStatusResponse.totalAmountFiatDisplay,
+                    cancelUrl: paymentStatusResponse.cancelUrl,
+                    completed: paymentStatusResponse.completed,
+                    redirectUrl: paymentStatusResponse.redirectUrl,
+                },
+                error: errorResponse,
             };
         } else {
             return {
-                merchantDisplayName: 'Failed...',
-                totalAmountUSDCDisplay: 'Failed...',
-                totalAmountFiatDisplay: 'Failed...',
-                cancelUrl: null,
-                completed: false,
-                redirectUrl: null,
+                details: null,
+                error: null,
             };
         }
     }
@@ -99,9 +109,16 @@ const paySlice = createSlice({
             .addCase(timerTick.rejected, (state: PayState) => {
                 // Handle timerTick.rejected if needed
             })
-            .addCase(timerTick.fulfilled, (state: PayState, action: PayloadAction<PaymentDetails>) => {
-                state.paymentDetails = action.payload;
-            });
+            .addCase(
+                timerTick.fulfilled,
+                (
+                    state: PayState,
+                    action: PayloadAction<{ details: PaymentDetails | null; error: PayError | null }>
+                ) => {
+                    state.paymentDetails = action.payload.details;
+                    state.paymentError = action.payload.error;
+                }
+            );
     },
 });
 
@@ -119,4 +136,7 @@ export const getRedirectUrl = (state: any): string | null => state.pay.redirectU
 
 export const getPayerAccount = (state: any): string => state.pay.payerAccount;
 
-export const getPaymentDetails = (state: any): PaymentDetails => state.pay.paymentDetails ?? initialPaymentDetails;
+export const getPaymentDetails = (state: any): PaymentDetails | null =>
+    state.pay.paymentDetails ?? initialPaymentDetails;
+
+export const getPaymentErrors = (state: RootState): PayError | null => state.pay.paymentError;
