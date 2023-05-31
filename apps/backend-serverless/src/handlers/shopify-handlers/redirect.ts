@@ -9,6 +9,7 @@ import { AccessTokenResponse } from '../../models/access-token-response.model.js
 import { createMechantAuthCookieHeader } from '../../utilities/create-cookie-header.utility.js';
 import axios from 'axios';
 import { makePaymentAppConfigure } from '../../services/shopify/payment-app-configure.service.js';
+import { ErrorMessage, ErrorType, errorResponse } from '../../utilities/responses/error-response.utility.js';
 
 export const redirect = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
     const prisma = new PrismaClient();
@@ -21,13 +22,13 @@ export const redirect = async (event: APIGatewayProxyEventV2): Promise<APIGatewa
     const jwtSecretKey = process.env.JWT_SECRET_KEY;
 
     if (redirectUrl == null || jwtSecretKey == null) {
-        return requestErrorResponse(new Error('Redirect URL or JWT secret key is not set'));
+        return errorResponse(ErrorType.internalServerError, ErrorMessage.missingEnv);
     }
 
     try {
         parsedAppRedirectQuery = await verifyAndParseShopifyRedirectRequest(event.queryStringParameters);
     } catch (error) {
-        return requestErrorResponse(error);
+        return errorResponse(ErrorType.badRequest, ErrorMessage.invalidRequestParameters);
     }
 
     const shop = parsedAppRedirectQuery.shop;
@@ -42,7 +43,7 @@ export const redirect = async (event: APIGatewayProxyEventV2): Promise<APIGatewa
     let merchant = await merchantService.getMerchant({ shop: shop });
 
     if (merchant == null) {
-        return requestErrorResponse(new Error('Merchant not found'));
+        return errorResponse(ErrorType.notFound, ErrorMessage.unknownMerchant);
     }
 
     const updateData = {
@@ -53,23 +54,44 @@ export const redirect = async (event: APIGatewayProxyEventV2): Promise<APIGatewa
     try {
         merchant = await merchantService.updateMerchant(merchant, updateData);
     } catch (error) {
-        return requestErrorResponse(error);
+        return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
     }
 
-    // TODO: Verify output and throw if it's bad
-    // TODO: Set value to true after KYB
+    // TODO: Set value to true after KYB, this will change once we implement KYB
+    // TODO: Update merchant record to reflect status
     const paymentAppConfigure = makePaymentAppConfigure(axios);
-    const configure = await paymentAppConfigure(merchant.id, true, shop, accessTokenResponse.access_token);
 
-    if (redirectUrl == null) {
-        return requestErrorResponse(new Error('Merchant redirect location is not set'));
+    // TODO: Make this dynamic
+    const isReady = true;
+
+    try {
+        const appConfigureResponse = await paymentAppConfigure(
+            merchant.id,
+            isReady,
+            shop,
+            accessTokenResponse.access_token
+        );
+
+        // TODO: Verify the response and throw if it's bad
+
+        // TODO: Update merchant record to reflect status
+    } catch (error) {
+        try {
+            await sendPaymentAppConfigureRetryMessage(merchant.id, isReady, shop, accessTokenResponse.access_token);
+        } catch (error) {
+            // If this fails we should log a critical error but it's not the end of the world, it just means that we have an issue sending retry messages
+            // We should eventually have some kind of redundant system here but for now we can just send the user back to the merchant ui
+            // in a state that is logged in but not fully set up with Shopify
+            // TODO: Handle this better
+            // TODO: Log critical error
+        }
     }
 
     let merchantAuthCookieHeader: string;
     try {
         merchantAuthCookieHeader = createMechantAuthCookieHeader(merchant.id);
     } catch (error) {
-        return requestErrorResponse(error);
+        return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
     }
 
     return {
@@ -82,3 +104,6 @@ export const redirect = async (event: APIGatewayProxyEventV2): Promise<APIGatewa
         body: JSON.stringify({}),
     };
 };
+function sendPaymentAppConfigureRetryMessage(id: string, arg1: boolean, shop: string, access_token: string) {
+    throw new Error('Function not implemented.');
+}

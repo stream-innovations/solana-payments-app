@@ -34,15 +34,6 @@ export enum PayingToken {
     SOL = 'SOL',
 }
 
-const initialPaymentDetails: PaymentDetails = {
-    merchantDisplayName: 'Loading...',
-    totalAmountUSDCDisplay: 'Loading...',
-    totalAmountFiatDisplay: 'Loading...',
-    cancelUrl: null,
-    completed: false,
-    redirectUrl: null,
-};
-
 const initalState: PayState = {
     paymentMethod: 'connect-wallet',
     paymentId: null,
@@ -57,10 +48,36 @@ export const timerTick = createAsyncThunk<{ details: PaymentDetails | null; erro
     async (_, { getState }): Promise<{ details: PaymentDetails | null; error: PayError | null }> => {
         const state = getState() as RootState;
         const paymentId = state.pay.paymentId;
-        if (paymentId != null) {
-            const response = await axios.get(
-                `https://boubt4ej71.execute-api.us-east-1.amazonaws.com/payment-status?paymentId=${paymentId}`
-            );
+
+        try {
+            const backendUrl = process.env.BACKEND_URL;
+            const mockMerchantDisplayName = process.env.NEXT_PUBLIC_MOCK_MERCHANT_DISPLAY_NAME;
+            const mockTotalUSDCDisplay = process.env.NEXT_PUBLIC_MOCK_TOTAL_USDC_DISPLAY;
+            const mockTotalFiat = process.env.NEXT_PUBLIC_MOCK_TOTAL_FIAT;
+
+            if (mockMerchantDisplayName != null && mockTotalUSDCDisplay != null && mockTotalFiat != null) {
+                return {
+                    details: {
+                        merchantDisplayName: mockMerchantDisplayName,
+                        totalAmountUSDCDisplay: mockTotalUSDCDisplay,
+                        totalAmountFiatDisplay: mockTotalFiat,
+                        cancelUrl: null,
+                        completed: false,
+                        redirectUrl: null,
+                    },
+                    error: null,
+                };
+            }
+
+            if (backendUrl == null) {
+                throw new Error('Backend URL is null');
+            }
+
+            if (paymentId == null) {
+                throw new Error('Payment ID is null');
+            }
+
+            const response = await axios.get(`${backendUrl}/payment-status?paymentId=${paymentId}`);
             const paymentStatusResponse = response.data.paymentStatus;
             const errorResponse = response.data.error;
 
@@ -75,7 +92,7 @@ export const timerTick = createAsyncThunk<{ details: PaymentDetails | null; erro
                 },
                 error: errorResponse,
             };
-        } else {
+        } catch (error) {
             return {
                 details: null,
                 error: null,

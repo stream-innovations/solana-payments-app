@@ -8,6 +8,9 @@ import { PrismaClient, TransactionType } from '@prisma/client';
 import { TransactionRecordService } from '../../services/database/transaction-record-service.database.service.js';
 import { processDiscoveredPaymentTransaction } from '../../services/buisness-logic/process-discovered-payment-transaction.service.js';
 import { processDiscoveredRefundTransaction } from '../../services/buisness-logic/process-discovered-refund-transaction.service.js';
+import { web3 } from '@project-serum/anchor';
+import { fetchTransaction } from '../../services/fetch-transaction.service.js';
+import { ErrorMessage, ErrorType, errorResponse } from '../../utilities/responses/error-response.utility.js';
 
 // TODO: MASSIVE TASK
 // This callback returns an array of transactions, if any of these dont work or throw, we need to make sure we
@@ -15,9 +18,6 @@ import { processDiscoveredRefundTransaction } from '../../services/buisness-logi
 // 2. set ourselves up to try again later
 export const helius = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
     let heliusEnhancedTransactions: HeliusEnhancedTransactionArray;
-
-    console.log(event.body);
-
     const prisma = new PrismaClient();
     const transactionRecordService = new TransactionRecordService(prisma);
 
@@ -26,18 +26,20 @@ export const helius = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
     } catch (error) {
         // Returning an error message here doesn't do much for us now but like I noted at the ending function
         // return, maybe a bad status would get helius to retry for us.
-        return requestErrorResponse(error);
+        return errorResponse(ErrorType.badRequest, ErrorMessage.invalidRequestBody);
     }
 
-    for (const transaction of heliusEnhancedTransactions) {
+    for (const heliusTransaction of heliusEnhancedTransactions) {
         try {
             const transactionRecord = await transactionRecordService.getTransactionRecord({
-                signature: transaction.signature,
+                signature: heliusTransaction.signature,
             });
 
             if (transactionRecord == null) {
                 throw new Error('Transaction not found.');
             }
+
+            const transaction = await fetchTransaction(transactionRecord.signature);
 
             switch (transactionRecord.type) {
                 case TransactionType.payment:
@@ -50,7 +52,7 @@ export const helius = async (event: APIGatewayProxyEvent): Promise<APIGatewayPro
         } catch (error) {
             // We will catch here on odd throws, valuable catches should happen elsewhere
             // TODO: Add logging around these odd throws
-            return requestErrorResponse(error);
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
         }
     }
 

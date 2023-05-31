@@ -5,44 +5,45 @@ import { MerchantService } from '../database/merchant-service.database.service.j
 import { getCustomerFromHeliusEnhancedTransaction } from '../../utilities/get-customer.utility.js';
 import { makePaymentSessionResolve } from '../shopify/payment-session-resolve.service.js';
 import axios from 'axios';
+import { verifyPaymentTransactionWithPaymentRecord } from '../transaction-validation/validate-discovered-payment-transaction.service.js';
+import { web3 } from '@project-serum/anchor';
+import { sendPaymentResolveRetryMessage } from '../sqs/sqs-send-message.service.js';
 
 export const processDiscoveredPaymentTransaction = async (
     transactionRecord: TransactionRecord,
-    transaction: HeliusEnhancedTransaction,
+    transaction: web3.Transaction,
     prisma: PrismaClient
 ) => {
-    // we should probably do some validation here to make sure the transaction
-    // actually matches the payment record that the transaction is associated with
-    // for now i will ignore that, mocked the function for now
-    validateDiscoveredPaymentTransaction(transactionRecord, transaction);
-
     const paymentRecordService = new PaymentRecordService(prisma);
     const merchantService = new MerchantService(prisma);
 
-    // Verify the transaction is a payment
     if (transactionRecord.type != TransactionType.payment) {
+        // This would be a silly error to hit but it guards against incorrect usage
+        // All calls of this method should check it is a payment before calling
         throw new Error('Transaction record is not a payment');
     }
 
-    // catching this error here and throwing will just give it back to /helius but then at least
-    // that consolidates weird errors for logging into one place
     if (transactionRecord.paymentRecordId == null) {
+        // This would another silly error to hit but would reveal a greater problem
+        // All transaction records with a type of payment should have a payment record id
         throw new Error('Transaction record does not have a payment record id');
     }
 
-    const paymentRecord = await paymentRecordService.getPaymentRecord({
+    let paymentRecord = await paymentRecordService.getPaymentRecord({
         id: transactionRecord.paymentRecordId,
     });
 
     if (paymentRecord == null) {
+        // This case shouldn't come up because right now we don't have a strategy for pruning
+        // records from the database. So if the transaction record refrences a payment record
+        // but we can't find that payment record, then we have a problem with our database or
+        // how we created this transaction record.
         throw new Error('Payment record not found.');
     }
 
-    if (paymentRecord.shopGid == null) {
-        throw new Error('Shop gid not found on payment record.');
-    }
-
     if (paymentRecord.merchantId == null) {
+        // Another case that shouldn't happen. This could mean that a payment record got updated to remove
+        // a merchant id or that we created a transaction record without a merchant id.
         throw new Error('Merchant ID not found on payment record.');
     }
 
@@ -51,11 +52,38 @@ export const processDiscoveredPaymentTransaction = async (
     });
 
     if (merchant == null) {
+        // Another situation that shouldn't happen but could if a merchant deletes our app and we try to
+        // process some kind of transaction after they're deleted
+        // TODO: Figure out what happens if a merchant deletes our app but then a customer wants a refund
         throw new Error('Merchant not found with merchant id.');
     }
 
     if (merchant.accessToken == null) {
+        // This isn't likely as we shouldn't be gettings calls to create payments for merchants without
+        // access tokens. A more likely situation is that the access token is invalid. This could mean
+        // that the access token was deleted for some reason which would be a bug.
         throw new Error('Access token not found on merchant.');
+    }
+
+    // Verify against the payment record, if we throw in here, we should catch outside of this for logging
+    verifyPaymentTransactionWithPaymentRecord(paymentRecord, transaction, true);
+
+    // -- if we get here, we found a match! --
+    // we would hope at this point we could update the database to reflect we found it's match
+    // need to make sure we can guarentee that this can always go back and fix itself
+    // TODO: Figure out strategy for retrying this if it fails, I think cron job will suffice but
+    // let's be sure. No state should have changed so cron job should cover us.
+    paymentRecord = await paymentRecordService.updatePaymentRecord(paymentRecord, {
+        status: PaymentRecordStatus.paid,
+        transactionSignature: transactionRecord.signature,
+    });
+
+    if (paymentRecord.shopGid == null) {
+        // This is a simple check that we have already done above here, but after updating the payment
+        // record, we'd like to repeat this as we need the value for a call below. If this were to throw
+        // then we should be certain it would get recovered. I'm not sure though how that would happen
+        // without the shopGid.
+        throw new Error('Shop gid not found on payment record.');
     }
 
     // Ok so this part is interesting because if this were to throw, we would actully want different behavior
@@ -73,31 +101,26 @@ export const processDiscoveredPaymentTransaction = async (
         );
 
         // TODO: Do some parsing on this to validate that shopify recognized the update
-        const redirectUrl =
-            resolvePaymentResponse.data.paymentSessionResolve.paymentSession.nextAction.context.redirectUrl;
+        const paymentSession = resolvePaymentResponse.data.paymentSessionResolve.paymentSession;
+        const redirectUrl = paymentSession.nextAction?.context?.redirectUrl;
 
         if (redirectUrl == null) {
             throw new Error('Redirect url not found on payment session resolve response.');
         }
 
-        // If this were to throw, then we could just try again or add it to the retry queue, adding to the retry queue
-        // works also because we would just make the same calls to shopify and because of idemoency, it would just
-        // work
         await paymentRecordService.updatePaymentRecord(paymentRecord, {
             status: PaymentRecordStatus.completed,
             redirectUrl: redirectUrl,
-            transactionSignature: transaction.signature,
             completedAt: new Date(),
         });
     } catch (error) {
-        // TODO: Handle the error by adding it to the retry queue
+        // TODO: Log the error with Sentry, generally could be a normal situation to arise but it's still good to try why it happened
+        try {
+            await sendPaymentResolveRetryMessage(paymentRecord.id);
+        } catch (err) {
+            // TODO: This would be an odd error to hit, sending messages to the queue shouldn't fail. It will be good to log this
+            // with sentry and figure out why it happened. Also good to figure out some kind of redundancy here. Also good to
+            // build in a way to manually intervene here if needed.
+        }
     }
-};
-
-const validateDiscoveredPaymentTransaction = (
-    transactionRecord: TransactionRecord,
-    transaction: HeliusEnhancedTransaction
-) => {
-    transactionRecord;
-    transaction;
 };
