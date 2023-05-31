@@ -1,12 +1,12 @@
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { PaymentRecord, PrismaClient, TransactionType } from '@prisma/client';
 import { requestErrorResponse } from '../../utilities/request-response.utility.js';
-import { TransactionRequestResponse } from '../../models/transaction-request-response.model.js';
+import { TransactionRequestResponse } from '../../models/transaction-requests/transaction-request-response.model.js';
 import { fetchPaymentTransaction } from '../../services/transaction-request/fetch-payment-transaction.service.js';
 import {
     PaymentTransactionRequestParameters,
     parseAndValidatePaymentTransactionRequest,
-} from '../../models/payment-transaction-request-parameters.model.js';
+} from '../../models/transaction-requests/payment-transaction-request-parameters.model.js';
 import { encodeBufferToBase58 } from '../../utilities/encode-transaction.utility.js';
 import { decode } from '../../utilities/string.utility.js';
 import { encodeTransaction } from '../../utilities/encode-transaction.utility.js';
@@ -21,6 +21,7 @@ import { TrmService } from '../../services/trm-service.service.js';
 import * as Sentry from '@sentry/serverless';
 import { verifyPaymentTransactionWithPaymentRecord } from '../../services/transaction-validation/validate-discovered-payment-transaction.service.js';
 import { ErrorMessage, ErrorType, errorResponse } from '../../utilities/responses/error-response.utility.js';
+import axios from 'axios';
 
 Sentry.AWSLambda.init({
     dsn: 'https://dbf74b8a0a0e4927b9269aa5792d356c@o4505168718004224.ingest.sentry.io/4505168722526208',
@@ -105,7 +106,8 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
                 account,
                 gasKeypair.publicKey.toBase58(),
                 singleUseKeypair.publicKey.toBase58(),
-                gasKeypair.publicKey.toBase58()
+                gasKeypair.publicKey.toBase58(),
+                axios
             );
         } catch (error) {
             return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);

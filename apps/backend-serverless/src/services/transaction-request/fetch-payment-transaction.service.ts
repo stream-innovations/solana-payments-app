@@ -3,7 +3,7 @@ import { buildPaymentTransactionRequestEndpoint } from '../../utilities/endpoint
 import {
     TransactionRequestResponse,
     parseAndValidateTransactionRequestResponse,
-} from '../../models/transaction-request-response.model.js';
+} from '../../models/transaction-requests/transaction-request-response.model.js';
 import { Merchant, PaymentRecord } from '@prisma/client';
 import { USDC_MINT } from '../../configs/tokens.config.js';
 
@@ -13,7 +13,8 @@ export const fetchPaymentTransaction = async (
     account: string,
     gas: string,
     singleUseNewAcc: string,
-    singleUsePayer: string
+    singleUsePayer: string,
+    axiosInstance: typeof axios
 ): Promise<TransactionRequestResponse> => {
     if (merchant.paymentAddress == null) {
         throw new Error('Merchant payment address not found.');
@@ -46,10 +47,10 @@ export const fetchPaymentTransaction = async (
         'test-one,test-two'
     );
     const headers = {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/x-www-form-urlencoded', // TODO: I think i need to make this json
     };
 
-    const response = await axios.post(endpoint, { account: account }, { headers: headers });
+    const response = await axiosInstance.post(endpoint, { account: account }, { headers: headers });
 
     if (response.status != 200) {
         throw new Error('Error fetching payment transaction.');
