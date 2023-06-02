@@ -1,3 +1,4 @@
+import * as Sentry from '@sentry/serverless';
 import { PrismaClient } from '@prisma/client';
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import {
@@ -5,114 +6,140 @@ import {
     parseAndValidateAppRedirectQueryParams,
 } from '../../models/shopify/redirect-query-params.model.js';
 import { fetchAccessToken } from '../../services/fetch-access-token.service.js';
-import { requestErrorResponse } from '../../utilities/request-response.utility.js';
-import { verifyRedirectParams } from '../../utilities/shopify-redirect-request.utility.js';
+import { requestErrorResponse } from '../../utilities/responses/request-response.utility.js';
+import { verifyRedirectParams } from '../../utilities/shopify/shopify-redirect-request.utility.js';
 import { MerchantService } from '../../services/database/merchant-service.database.service.js';
 import { AccessTokenResponse } from '../../models/shopify/access-token-response.model.js';
-import { createMechantAuthCookieHeader } from '../../utilities/create-cookie-header.utility.js';
+import { createMechantAuthCookieHeader } from '../../utilities/clients/merchant-ui/create-cookie-header.utility.js';
 import axios from 'axios';
 import { makePaymentAppConfigure } from '../../services/shopify/payment-app-configure.service.js';
 import { ErrorMessage, ErrorType, errorResponse } from '../../utilities/responses/error-response.utility.js';
+import { makeAdminData } from '../../services/shopify/admin-data.service.js';
+import { AdminDataResponse } from '../../models/shopify-graphql-responses/admin-data.response.model.js';
+import { validatePaymentAppConfigured } from '../../services/shopify/validate-payment-app-configured.service.js';
+import { sendAppConfigureRetryMessage } from '../../services/sqs/sqs-send-message.service.js';
 
-export const redirect = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
-    const prisma = new PrismaClient();
-    const merchantService = new MerchantService(prisma);
+Sentry.AWSLambda.init({
+    dsn: process.env.SENTRY_DSN,
+    tracesSampleRate: 1.0,
+});
 
-    let parsedAppRedirectQuery: AppRedirectQueryParam;
-    let accessTokenResponse: AccessTokenResponse;
+export const redirect = Sentry.AWSLambda.wrapHandler(
+    async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
+        const prisma = new PrismaClient();
+        const merchantService = new MerchantService(prisma);
 
-    const redirectUrl = process.env.MERCHANT_UI_URL;
-    const jwtSecretKey = process.env.JWT_SECRET_KEY;
+        let parsedAppRedirectQuery: AppRedirectQueryParam;
+        let accessTokenResponse: AccessTokenResponse;
 
-    if (redirectUrl == null || jwtSecretKey == null) {
-        return errorResponse(ErrorType.internalServerError, ErrorMessage.missingEnv);
-    }
+        const redirectUrl = process.env.MERCHANT_UI_URL;
+        const jwtSecretKey = process.env.JWT_SECRET_KEY;
 
-    try {
-        parsedAppRedirectQuery = await parseAndValidateAppRedirectQueryParams(event.queryStringParameters);
-    } catch (error) {
-        return errorResponse(ErrorType.badRequest, ErrorMessage.invalidRequestParameters);
-    }
-
-    try {
-        await verifyRedirectParams(parsedAppRedirectQuery, prisma);
-    } catch (error) {
-        return errorResponse(ErrorType.badRequest, ErrorMessage.invalidRequestParameters);
-    }
-
-    const shop = parsedAppRedirectQuery.shop;
-    const code = parsedAppRedirectQuery.code;
-
-    try {
-        accessTokenResponse = await fetchAccessToken(shop, code);
-    } catch (error) {
-        return requestErrorResponse(error);
-    }
-
-    let merchant = await merchantService.getMerchant({ shop: shop });
-
-    if (merchant == null) {
-        return errorResponse(ErrorType.notFound, ErrorMessage.unknownMerchant);
-    }
-
-    const updateData = {
-        accessToken: accessTokenResponse.access_token,
-        scopes: accessTokenResponse.scope,
-    };
-
-    try {
-        merchant = await merchantService.updateMerchant(merchant, updateData);
-    } catch (error) {
-        return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
-    }
-
-    // TODO: Set value to true after KYB, this will change once we implement KYB
-    // TODO: Update merchant record to reflect status
-    const paymentAppConfigure = makePaymentAppConfigure(axios);
-
-    // TODO: Make this dynamic
-    const isReady = true;
-
-    try {
-        const appConfigureResponse = await paymentAppConfigure(
-            merchant.id,
-            isReady,
-            shop,
-            accessTokenResponse.access_token
-        );
-
-        // TODO: Verify the response and throw if it's bad
-
-        // TODO: Update merchant record to reflect status
-    } catch (error) {
-        try {
-            await sendPaymentAppConfigureRetryMessage(merchant.id, isReady, shop, accessTokenResponse.access_token);
-        } catch (error) {
-            // If this fails we should log a critical error but it's not the end of the world, it just means that we have an issue sending retry messages
-            // We should eventually have some kind of redundant system here but for now we can just send the user back to the merchant ui
-            // in a state that is logged in but not fully set up with Shopify
-            // TODO: Handle this better
-            // TODO: Log critical error
+        if (redirectUrl == null || jwtSecretKey == null) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.missingEnv);
         }
-    }
 
-    let merchantAuthCookieHeader: string;
-    try {
-        merchantAuthCookieHeader = createMechantAuthCookieHeader(merchant.id);
-    } catch (error) {
-        return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
-    }
+        try {
+            parsedAppRedirectQuery = await parseAndValidateAppRedirectQueryParams(event.queryStringParameters);
+        } catch (error) {
+            return errorResponse(ErrorType.badRequest, ErrorMessage.invalidRequestParameters);
+        }
 
-    return {
-        statusCode: 301,
-        headers: {
-            Location: redirectUrl,
-            'Content-Type': 'text/html',
-            'Set-Cookie': merchantAuthCookieHeader,
-        },
-        body: JSON.stringify({}),
-    };
-};
-function sendPaymentAppConfigureRetryMessage(id: string, arg1: boolean, shop: string, access_token: string) {
-    throw new Error('Function not implemented.');
-}
+        try {
+            await verifyRedirectParams(parsedAppRedirectQuery, prisma);
+        } catch (error) {
+            return errorResponse(ErrorType.badRequest, ErrorMessage.invalidRequestParameters);
+        }
+
+        const shop = parsedAppRedirectQuery.shop;
+        const code = parsedAppRedirectQuery.code;
+
+        try {
+            accessTokenResponse = await fetchAccessToken(shop, code);
+        } catch (error) {
+            return requestErrorResponse(error);
+        }
+
+        let merchant = await merchantService.getMerchant({ shop: shop });
+
+        if (merchant == null) {
+            return errorResponse(ErrorType.notFound, ErrorMessage.unknownMerchant);
+        }
+
+        const updateData = {
+            accessToken: accessTokenResponse.access_token,
+            scopes: accessTokenResponse.scope,
+        };
+
+        try {
+            merchant = await merchantService.updateMerchant(merchant, updateData);
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
+        }
+
+        const adminData = makeAdminData(axios);
+
+        let adminDataResponse: AdminDataResponse;
+
+        try {
+            adminDataResponse = await adminData(shop, accessTokenResponse.access_token);
+            merchant = await merchantService.updateMerchant(merchant, {
+                name: adminDataResponse.data.shop.name,
+                email: adminDataResponse.data.shop.email,
+            });
+        } catch {
+            // I don't think we would want to fail anything here, at best we can retry it
+            // TODO: Figure out failure strategy
+        }
+
+        // TODO: Set value to true after KYB, this will change once we implement KYB
+        // TODO: Update merchant record to reflect status
+        const paymentAppConfigure = makePaymentAppConfigure(axios);
+
+        // TODO: Make this dynamic
+        const isReady = true;
+
+        try {
+            const appConfigureResponse = await paymentAppConfigure(
+                merchant.id,
+                isReady,
+                shop,
+                accessTokenResponse.access_token
+            );
+
+            validatePaymentAppConfigured(appConfigureResponse);
+
+            // TODO: Update merchant record to reflect status
+        } catch (error) {
+            try {
+                await sendAppConfigureRetryMessage(merchant.id, isReady);
+            } catch (error) {
+                // If this fails we should log a critical error but it's not the end of the world, it just means that we have an issue sending retry messages
+                // We should eventually have some kind of redundant system here but for now we can just send the user back to the merchant ui
+                // in a state that is logged in but not fully set up with Shopify
+                // TODO: Handle this better
+                // TODO: Log critical error
+            }
+        }
+
+        let merchantAuthCookieHeader: string;
+        try {
+            merchantAuthCookieHeader = createMechantAuthCookieHeader(merchant.id);
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
+        }
+
+        return {
+            statusCode: 301,
+            headers: {
+                Location: redirectUrl,
+                'Content-Type': 'text/html',
+                'Set-Cookie': merchantAuthCookieHeader,
+            },
+            body: JSON.stringify({}),
+        };
+    },
+    {
+        rethrowAfterCapture: true,
+    }
+);

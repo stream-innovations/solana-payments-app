@@ -9,6 +9,14 @@ import { web3 } from '@project-serum/anchor';
 import { findAssociatedTokenAddress } from '../pubkeys.utility.js';
 import { USDC_MINT } from '../../configs/tokens.config.js';
 import { TOKEN_PROGRAM_ID, createTransferCheckedInstruction } from '@solana/spl-token';
+import { AdminDataResponse } from '../../models/shopify-graphql-responses/admin-data.response.model.js';
+import {
+    PaymentSessionNextActionAction,
+    PaymentSessionStateCode,
+    PaymentSessionStateRejectedReason,
+    RefundSessionStateCode,
+    RefundSessionStateRejectedReason,
+} from '../../models/shopify-graphql-responses/shared.model.js';
 
 /**
  *
@@ -18,6 +26,7 @@ import { TOKEN_PROGRAM_ID, createTransferCheckedInstruction } from '@solana/spl-
 export const createMockMerchant = (merchantData: Partial<Merchant> = {}): Merchant => {
     return {
         id: merchantData.id ?? 'some-merchant-id',
+        email: merchantData.email ?? 'some-merchant-email',
         shop: merchantData.shop ?? 'some-merchant-shop.myshopify.com',
         lastNonce: merchantData.lastNonce ?? 'some-nonce',
         accessToken: merchantData.accessToken ?? null,
@@ -51,6 +60,7 @@ export const createMockPaymentRecord = (paymentRecordData: Partial<PaymentRecord
         redirectUrl: paymentRecordData.redirectUrl ?? null,
         requestedAt: paymentRecordData.requestedAt ?? new Date(),
         completedAt: paymentRecordData.completedAt ?? null,
+        rejectionReason: paymentRecordData.rejectionReason ?? null,
     };
 };
 
@@ -91,9 +101,14 @@ export const createMockSuccessPaymentSessionResolveResponse = (
                 paymentSession: {
                     id: 'some-mock-payment-session-id',
                     state: {
-                        code: 'SUCCESS',
+                        code: PaymentSessionStateCode.resolved,
                     },
-                    nextAction: { action: 'redirect', context: { redirectUrl: 'https://example.com' } },
+                    nextAction: {
+                        action: PaymentSessionNextActionAction.redirect,
+                        context: {
+                            redirectUrl: 'https://example.com',
+                        },
+                    },
                 },
                 userErrors: [],
             },
@@ -116,9 +131,13 @@ export const createMockSuccessPaymentSessionRejectResponse = (
                 paymentSession: {
                     id: 'some-mock-payment-session-id',
                     state: {
-                        code: 'SUCCESS',
+                        code: PaymentSessionStateCode.rejected,
+                        reason: PaymentSessionStateRejectedReason.risky,
                     },
-                    nextAction: { action: 'redirect', context: { redirectUrl: 'https://example.com' } },
+                    nextAction: {
+                        action: PaymentSessionNextActionAction.redirect,
+                        context: { redirectUrl: 'https://example.com' },
+                    },
                 },
                 userErrors: [],
             },
@@ -141,7 +160,7 @@ export const createMockSuccessRefundSessionResolveResponse = (
                 refundSession: {
                     id: 'some-mock-refund-session-id',
                     state: {
-                        code: 'SUCCESS',
+                        code: RefundSessionStateCode.resolved,
                     },
                 },
                 userErrors: [],
@@ -165,7 +184,9 @@ export const createMockSuccessRefundSessionRejectResponse = (
                 refundSession: {
                     id: 'some-mock-refund-session-id',
                     state: {
-                        code: 'SUCCESS',
+                        code: RefundSessionStateCode.rejected,
+                        reason: RefundSessionStateRejectedReason.processingError,
+                        merchantMessage: 'some lil reason thing',
                     },
                 },
                 userErrors: [],
@@ -191,6 +212,24 @@ export const createMockPaymentAppConfigureResponse = (
                     ready: true,
                 },
                 userErrors: [],
+            },
+        },
+        extensions: {},
+    };
+};
+
+/**
+ *
+ * @param paymentAppConfigureResponse: Partial<PaymentAppConfigureResponse>
+ * @returns a mock payment app configure response to be used for testing only
+ */
+export const createMockAdminDataResponse = (adminDataResponse: Partial<AdminDataResponse> = {}): AdminDataResponse => {
+    return {
+        data: {
+            shop: {
+                name: 'mock-shop-name',
+                email: 'mock-shop-email',
+                enabledPresentmentCurrencies: ['mock-currency-1', 'mock-currency-2'],
             },
         },
         extensions: {},

@@ -1,12 +1,12 @@
 import * as Sentry from '@sentry/serverless';
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { parseAndValidateShopifyPaymentInitiation } from '../../models/shopify/process-payment-request.model.js';
-import { requestErrorResponse } from '../../utilities/request-response.utility.js';
+import { requestErrorResponse } from '../../utilities/responses/request-response.utility.js';
 import { PrismaClient } from '@prisma/client';
 import { PaymentRecordService } from '../../services/database/payment-record-service.database.service.js';
 import { MerchantService } from '../../services/database/merchant-service.database.service.js';
 import { convertAmountAndCurrencyToUsdcSize } from '../../services/coin-gecko.service.js';
-import { generatePubkeyString } from '../../utilities/generate-pubkey.js';
+import { generatePubkeyString } from '../../utilities/pubkeys.utility.js';
 import {
     ErrorMessage,
     ErrorType,
@@ -15,7 +15,7 @@ import {
 } from '../../utilities/responses/error-response.utility.js';
 
 Sentry.AWSLambda.init({
-    dsn: 'https://dbf74b8a0a0e4927b9269aa5792d356c@o4505168718004224.ingest.sentry.io/4505168722526208',
+    dsn: process.env.SENTRY_DSN,
     tracesSampleRate: 1.0,
 });
 

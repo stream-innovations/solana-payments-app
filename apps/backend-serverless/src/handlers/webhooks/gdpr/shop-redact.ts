@@ -5,8 +5,8 @@ import {
     ShopifyWebhookTopic,
     parseAndValidateShopifyWebhookHeaders,
 } from '../../../models/shopify/shopify-webhook-headers.model.js';
-import { requestErrorResponse } from '../../../utilities/request-response.utility.js';
-import { verifyShopifyWebhook } from '../../../utilities/verify-shopify-webhook-header.utility.js';
+import { requestErrorResponse } from '../../../utilities/responses/request-response.utility.js';
+import { verifyShopifyWebhook } from '../../../utilities/shopify/verify-shopify-webhook-header.utility.js';
 import {
     ShopRedactRequest,
     parseAndValidateShopRedactRequestBody,
@@ -16,7 +16,7 @@ import { MerchantService } from '../../../services/database/merchant-service.dat
 import { ErrorMessage, ErrorType, errorResponse } from '../../../utilities/responses/error-response.utility.js';
 
 Sentry.AWSLambda.init({
-    dsn: 'https://dbf74b8a0a0e4927b9269aa5792d356c@o4505168718004224.ingest.sentry.io/4505168722526208',
+    dsn: process.env.SENTRY_DSN,
     tracesSampleRate: 1.0,
 });
 

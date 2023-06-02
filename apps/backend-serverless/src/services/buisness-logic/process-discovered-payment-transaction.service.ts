@@ -2,12 +2,12 @@ import { PaymentRecordStatus, PrismaClient, TransactionRecord, TransactionType }
 import { HeliusEnhancedTransaction } from '../../models/dependencies/helius-enhanced-transaction.model.js';
 import { PaymentRecordService } from '../database/payment-record-service.database.service.js';
 import { MerchantService } from '../database/merchant-service.database.service.js';
-import { getCustomerFromHeliusEnhancedTransaction } from '../../utilities/get-customer.utility.js';
 import { makePaymentSessionResolve } from '../shopify/payment-session-resolve.service.js';
 import axios from 'axios';
 import { verifyPaymentTransactionWithPaymentRecord } from '../transaction-validation/validate-discovered-payment-transaction.service.js';
 import { web3 } from '@project-serum/anchor';
 import { sendPaymentResolveRetryMessage } from '../sqs/sqs-send-message.service.js';
+import { validatePaymentSessionResolved } from '../shopify/validate-payment-session-resolved.service.js';
 
 export const processDiscoveredPaymentTransaction = async (
     transactionRecord: TransactionRecord,
@@ -47,6 +47,12 @@ export const processDiscoveredPaymentTransaction = async (
         throw new Error('Merchant ID not found on payment record.');
     }
 
+    if (paymentRecord.shopGid == null) {
+        // Another case that shouldn't happen. This could mean that a payment record got updated to remove
+        // a shop gid or that we created a transaction record without a shop gid.
+        throw new Error('Shop gid not found on payment record.');
+    }
+
     const merchant = await merchantService.getMerchant({
         id: paymentRecord.merchantId,
     });
@@ -73,24 +79,12 @@ export const processDiscoveredPaymentTransaction = async (
     // need to make sure we can guarentee that this can always go back and fix itself
     // TODO: Figure out strategy for retrying this if it fails, I think cron job will suffice but
     // let's be sure. No state should have changed so cron job should cover us.
-    paymentRecord = await paymentRecordService.updatePaymentRecord(paymentRecord, {
+    // TODO, update can fail so add try/catch here
+    await paymentRecordService.updatePaymentRecord(paymentRecord, {
         status: PaymentRecordStatus.paid,
         transactionSignature: transactionRecord.signature,
     });
 
-    if (paymentRecord.shopGid == null) {
-        // This is a simple check that we have already done above here, but after updating the payment
-        // record, we'd like to repeat this as we need the value for a call below. If this were to throw
-        // then we should be certain it would get recovered. I'm not sure though how that would happen
-        // without the shopGid.
-        throw new Error('Shop gid not found on payment record.');
-    }
-
-    // Ok so this part is interesting because if this were to throw, we would actully want different behavior
-    // If we throw here, we want to retry this message later, but also, if it succeeds, and we check that the return
-    // value fails, we also want to try again later, so basically we should either try/catch here and then
-    // handle it here, or we can throw inside of paymentSessionResolve if it parses weird, and still handle it here,
-    // either way, i'm thinking we want to handle it here
     try {
         const paymentSessionResolve = makePaymentSessionResolve(axios);
 
@@ -100,17 +94,11 @@ export const processDiscoveredPaymentTransaction = async (
             merchant.accessToken
         );
 
-        // TODO: Do some parsing on this to validate that shopify recognized the update
-        const paymentSession = resolvePaymentResponse.data.paymentSessionResolve.paymentSession;
-        const redirectUrl = paymentSession.nextAction?.context?.redirectUrl;
-
-        if (redirectUrl == null) {
-            throw new Error('Redirect url not found on payment session resolve response.');
-        }
+        const resolvePaymentData = validatePaymentSessionResolved(resolvePaymentResponse);
 
         await paymentRecordService.updatePaymentRecord(paymentRecord, {
             status: PaymentRecordStatus.completed,
-            redirectUrl: redirectUrl,
+            redirectUrl: resolvePaymentData.redirectUrl,
             completedAt: new Date(),
         });
     } catch (error) {
