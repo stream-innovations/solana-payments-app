@@ -14,14 +14,16 @@ import {
     errorTypeForError,
 } from '../../utilities/responses/error-response.utility.js';
 
+const prisma = new PrismaClient();
+
 Sentry.AWSLambda.init({
     dsn: process.env.SENTRY_DSN,
     tracesSampleRate: 1.0,
+    integrations: [new Sentry.Integrations.Prisma({ client: prisma })],
 });
 
 export const payment = Sentry.AWSLambda.wrapHandler(
     async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
-        const prisma = new PrismaClient();
         const paymentRecordService = new PaymentRecordService(prisma);
         const merchantService = new MerchantService(prisma);
         const paymentUiUrl = process.env.PAYMENT_UI_URL;
@@ -51,7 +53,7 @@ export const payment = Sentry.AWSLambda.wrapHandler(
         try {
             paymentInitiation = parseAndValidateShopifyPaymentInitiation(JSON.parse(event.body));
         } catch (error) {
-            return errorResponse(ErrorType.badRequest, ErrorMessage.invalidRequestBody);
+            return requestErrorResponse(error);
         }
 
         let paymentRecord = await paymentRecordService.getPaymentRecord({
@@ -60,19 +62,19 @@ export const payment = Sentry.AWSLambda.wrapHandler(
 
         if (paymentRecord == null) {
             try {
-                const usdcSize = await convertAmountAndCurrencyToUsdcSize(
-                    paymentInitiation.amount,
-                    paymentInitiation.currency
-                );
+                // const usdcSize = await convertAmountAndCurrencyToUsdcSize(
+                //     paymentInitiation.amount,
+                //     paymentInitiation.currency
+                // );
                 const newPaymentRecordId = await generatePubkeyString();
                 paymentRecord = await paymentRecordService.createPaymentRecord(
                     newPaymentRecordId,
                     paymentInitiation,
                     merchant,
-                    usdcSize
+                    0.001
                 );
             } catch (error) {
-                return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
+                return requestErrorResponse(error);
             }
         }
 

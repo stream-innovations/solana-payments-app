@@ -19,14 +19,16 @@ import { AdminDataResponse } from '../../models/shopify-graphql-responses/admin-
 import { validatePaymentAppConfigured } from '../../services/shopify/validate-payment-app-configured.service.js';
 import { sendAppConfigureRetryMessage } from '../../services/sqs/sqs-send-message.service.js';
 
+const prisma = new PrismaClient();
+
 Sentry.AWSLambda.init({
     dsn: process.env.SENTRY_DSN,
     tracesSampleRate: 1.0,
+    integrations: [new Sentry.Integrations.Prisma({ client: prisma })],
 });
 
 export const redirect = Sentry.AWSLambda.wrapHandler(
     async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
-        const prisma = new PrismaClient();
         const merchantService = new MerchantService(prisma);
 
         let parsedAppRedirectQuery: AppRedirectQueryParam;
@@ -87,7 +89,11 @@ export const redirect = Sentry.AWSLambda.wrapHandler(
                 name: adminDataResponse.data.shop.name,
                 email: adminDataResponse.data.shop.email,
             });
-        } catch {
+        } catch (error) {
+            return {
+                statusCode: 200,
+                body: JSON.stringify(error),
+            };
             // I don't think we would want to fail anything here, at best we can retry it
             // TODO: Figure out failure strategy
         }
@@ -132,7 +138,7 @@ export const redirect = Sentry.AWSLambda.wrapHandler(
         return {
             statusCode: 301,
             headers: {
-                Location: redirectUrl,
+                Location: `${redirectUrl}/merchant`,
                 'Content-Type': 'text/html',
                 'Set-Cookie': merchantAuthCookieHeader,
             },
