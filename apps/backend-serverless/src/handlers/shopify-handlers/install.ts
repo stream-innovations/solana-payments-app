@@ -1,5 +1,5 @@
 import * as Sentry from '@sentry/serverless';
-import { PrismaClient } from '@prisma/client';
+import { Merchant, PrismaClient } from '@prisma/client';
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { AppInstallQueryParam } from '../../models/shopify/install-query-params.model.js';
 import { requestErrorResponse } from '../../utilities/responses/request-response.utility.js';
@@ -10,6 +10,7 @@ import {
 import { MerchantService } from '../../services/database/merchant-service.database.service.js';
 import { generatePubkeyString } from '../../utilities/pubkeys.utility.js';
 import { ErrorMessage, ErrorType, errorResponse } from '../../utilities/responses/error-response.utility.js';
+import { createSignedShopifyCookie } from '../../utilities/clients/merchant-ui/create-cookie-header.utility.js';
 
 const prisma = new PrismaClient();
 
@@ -34,32 +35,38 @@ export const install = Sentry.AWSLambda.wrapHandler(
         const shop = parsedAppInstallQuery.shop;
         const newNonce = await generatePubkeyString();
 
-        try {
-            const merchant = await merchantService.getMerchant({ shop: shop });
+        let merchant: Merchant | null;
 
+        try {
+            merchant = await merchantService.getMerchant({ shop: shop });
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
+        }
+
+        try {
             if (merchant == null) {
                 const newMerchantId = await generatePubkeyString();
-                await merchantService.createMerchant(newMerchantId, shop, newNonce);
+                merchant = await merchantService.createMerchant(newMerchantId, shop, newNonce);
             } else {
-                await merchantService.updateMerchant(merchant, {
+                merchant = await merchantService.updateMerchant(merchant, {
                     lastNonce: newNonce,
                 });
             }
         } catch (error) {
-            // return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
-            return {
-                statusCode: 200,
-                body: JSON.stringify(error),
-            };
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.incompatibleDatabaseRecords);
         }
+
+        const signedCookie = createSignedShopifyCookie(newNonce);
+        const cookieValue = `nonce=${signedCookie}; HttpOnly; Secure; SameSite=Lax`;
 
         const redirectUrl = createShopifyOAuthGrantRedirectUrl(shop, newNonce);
 
         return {
             statusCode: 302,
-            headers: {
-                Location: redirectUrl,
-                'Content-Type': 'text/html',
+            multiValueHeaders: {
+                'Set-Cookie': [cookieValue],
+                Location: [redirectUrl],
+                'Content-Type': ['text/html'],
             },
             body: JSON.stringify({
                 message: 'Redirecting..',

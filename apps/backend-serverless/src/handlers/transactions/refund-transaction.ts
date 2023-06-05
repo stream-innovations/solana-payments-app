@@ -1,8 +1,7 @@
 import * as Sentry from '@sentry/serverless';
 import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import { PrismaClient, RefundRecord, TransactionType } from '@prisma/client';
+import { Merchant, PaymentRecord, PrismaClient, RefundRecord, TransactionType } from '@prisma/client';
 import { fetchGasKeypair } from '../../services/fetch-gas-keypair.service.js';
-import { requestErrorResponse } from '../../utilities/responses/request-response.utility.js';
 import {
     RefundTransactionRequest,
     parseAndValidateRefundTransactionRequest,
@@ -16,7 +15,6 @@ import {
 import { fetchRefundTransaction } from '../../services/transaction-request/fetch-refund-transaction.service.js';
 import { TransactionRecordService } from '../../services/database/transaction-record-service.database.service.js';
 import { RefundRecordService } from '../../services/database/refund-record-service.database.service.js';
-import { PaymentRecordService } from '../../services/database/payment-record-service.database.service.js';
 import { TrmService } from '../../services/trm-service.service.js';
 import { generateSingleUseKeypairFromRefundRecord } from '../../utilities/generate-single-use-keypair.utility.js';
 import { MerchantService } from '../../services/database/merchant-service.database.service.js';
@@ -40,7 +38,6 @@ export const refundTransaction = Sentry.AWSLambda.wrapHandler(
 
         const transactionRecordService = new TransactionRecordService(prisma);
         const refundRecordService = new RefundRecordService(prisma);
-        const paymentRecordService = new PaymentRecordService(prisma);
         const merchantService = new MerchantService(prisma);
 
         const TRM_API_KEY = process.env.TRM_API_KEY;
@@ -56,6 +53,8 @@ export const refundTransaction = Sentry.AWSLambda.wrapHandler(
         }
 
         const body = JSON.parse(event.body);
+
+        // TODO: Parse this like everything else
         const account = body['account'] as string | null;
 
         if (account == null) {
@@ -76,23 +75,41 @@ export const refundTransaction = Sentry.AWSLambda.wrapHandler(
             return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
         }
 
-        const refundRecord = await refundRecordService.getRefundRecord({
-            shopId: refundRequest.refundId,
-        });
+        let refundRecord: RefundRecord | null;
+
+        try {
+            refundRecord = await refundRecordService.getRefundRecord({
+                shopId: refundRequest.refundId,
+            });
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.databaseAccessError);
+        }
 
         if (refundRecord == null) {
             return errorResponse(ErrorType.notFound, ErrorMessage.unknownRefundRecord);
         }
 
-        const paymentRecord = await refundRecordService.getPaymentRecordForRefund({ id: refundRecord.id });
+        let paymentRecord: PaymentRecord | null;
+
+        try {
+            paymentRecord = await refundRecordService.getPaymentRecordForRefund({ id: refundRecord.id });
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.databaseAccessError);
+        }
 
         if (paymentRecord == null) {
             return errorResponse(ErrorType.notFound, ErrorMessage.unknownPaymentRecord);
         }
 
-        const merchant = await merchantService.getMerchant({
-            id: refundRecord.merchantId,
-        });
+        let merchant: Merchant | null;
+
+        try {
+            merchant = await merchantService.getMerchant({
+                id: refundRecord.merchantId,
+            });
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.databaseAccessError);
+        }
 
         if (merchant == null) {
             return errorResponse(ErrorType.notFound, ErrorMessage.unknownMerchant);
@@ -114,10 +131,13 @@ export const refundTransaction = Sentry.AWSLambda.wrapHandler(
             return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
         }
 
-        try {
-            await trmService.screenAddress(account);
-        } catch (error) {
-            return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
+        // We don't need to check with TRM for test transactions
+        if (refundRecord.test == false) {
+            try {
+                await trmService.screenAddress(account);
+            } catch (error) {
+                return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
+            }
         }
 
         try {

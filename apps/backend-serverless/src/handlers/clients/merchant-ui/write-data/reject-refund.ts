@@ -1,7 +1,6 @@
 import * as Sentry from '@sentry/serverless';
 import { Merchant, PrismaClient, RefundRecord, RefundRecordStatus } from '@prisma/client';
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { requestErrorResponse } from '../../../../utilities/responses/request-response.utility.js';
 import {
     RejectRefundRequest,
     parseAndValidateRejectRefundRequest,
@@ -46,17 +45,29 @@ export const rejectRefund = Sentry.AWSLambda.wrapHandler(
             return errorResponse(ErrorType.badRequest, ErrorMessage.invalidRequestParameters);
         }
 
-        const refundRecord = await refundRecordService.getRefundRecord({
-            shopId: rejectRefundRequest.refundId,
-        });
+        let refundRecord: RefundRecord | null;
+
+        try {
+            refundRecord = await refundRecordService.getRefundRecord({
+                shopId: rejectRefundRequest.refundId,
+            });
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.databaseAccessError);
+        }
 
         if (refundRecord == null) {
             return errorResponse(ErrorType.notFound, ErrorMessage.unknownRefundRecord);
         }
 
-        const merchant = await merchantService.getMerchant({
-            id: merchantAuthToken.id,
-        });
+        let merchant: Merchant | null;
+
+        try {
+            merchant = await merchantService.getMerchant({
+                id: merchantAuthToken.id,
+            });
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.databaseAccessError);
+        }
 
         if (merchant == null) {
             return errorResponse(ErrorType.notFound, ErrorMessage.unknownMerchant);

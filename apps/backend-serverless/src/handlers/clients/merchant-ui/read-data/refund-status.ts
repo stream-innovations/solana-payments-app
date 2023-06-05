@@ -1,24 +1,15 @@
 import * as Sentry from '@sentry/serverless';
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { requestErrorResponse } from '../../../../utilities/responses/request-response.utility.js';
-import { PrismaClient, RefundRecord } from '@prisma/client';
+import { Merchant, PaymentRecord, PrismaClient, RefundRecord } from '@prisma/client';
 import { MerchantService } from '../../../../services/database/merchant-service.database.service.js';
 import { MerchantAuthToken } from '../../../../models/clients/merchant-ui/merchant-auth-token.model.js';
-import {
-    RefundDataRequestParameters,
-    parseAndValidateRefundDataRequestParameters,
-} from '../../../../models/clients/merchant-ui/refund-data-request.model.js';
 import { withAuth } from '../../../../utilities/clients/merchant-ui/token-authenticate.utility.js';
 import { createGeneralResponse } from '../../../../utilities/clients/merchant-ui/create-general-response.js';
-import { createRefundResponse } from '../../../../utilities/clients/merchant-ui/create-refund-response.utility.js';
 import {
     parseAndValidateRefundStatusRequest,
     RefundStatusRequest,
 } from '../../../../models/clients/merchant-ui/refund-status-request.model.js';
-import {
-    RefundDataResponse,
-    createRefundDataResponseFromRefundRecord,
-} from '../../../../utilities/clients/merchant-ui/refund-record.utility.js';
+import { createRefundDataResponseFromRefundRecord } from '../../../../utilities/clients/merchant-ui/refund-record.utility.js';
 import { ErrorMessage, ErrorType, errorResponse } from '../../../../utilities/responses/error-response.utility.js';
 import { RefundRecordService } from '../../../../services/database/refund-record-service.database.service.js';
 
@@ -44,7 +35,13 @@ export const refundStatus = Sentry.AWSLambda.wrapHandler(
             return errorResponse(ErrorType.unauthorized, ErrorMessage.unauthorized);
         }
 
-        const merchant = await merchantService.getMerchant({ id: merchantAuthToken.id });
+        let merchant: Merchant | null;
+
+        try {
+            merchant = await merchantService.getMerchant({ id: merchantAuthToken.id });
+        } catch (error) {
+            return errorResponse(ErrorType.unauthorized, ErrorMessage.databaseAccessError);
+        }
 
         if (merchant == null) {
             return errorResponse(ErrorType.unauthorized, ErrorMessage.unauthorized);
@@ -56,16 +53,26 @@ export const refundStatus = Sentry.AWSLambda.wrapHandler(
             return errorResponse(ErrorType.badRequest, ErrorMessage.invalidRequestParameters);
         }
 
-        const refundRecord = await refundRecordService.getRefundRecordWithPayment({
-            shopId: refundStatusRequestParameters.shopId,
-        });
+        let refundRecord:
+            | (RefundRecord & {
+                  paymentRecord: PaymentRecord | null;
+              })
+            | null;
+
+        try {
+            refundRecord = await refundRecordService.getRefundRecordWithPayment({
+                shopId: refundStatusRequestParameters.shopId,
+            });
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.databaseAccessError);
+        }
 
         if (refundRecord == null) {
             return errorResponse(ErrorType.notFound, ErrorMessage.unknownRefundRecord);
         }
 
+        // TODO: Try/catch this
         const refundStatusResponse = createRefundDataResponseFromRefundRecord(refundRecord);
-
         const generalResponse = await createGeneralResponse(merchantAuthToken, prisma);
 
         const responseBodyData = {

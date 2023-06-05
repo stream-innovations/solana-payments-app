@@ -4,15 +4,20 @@ import { PaymentRecordService } from '../database/payment-record-service.databas
 import { MerchantService } from '../database/merchant-service.database.service.js';
 import { makePaymentSessionResolve } from '../shopify/payment-session-resolve.service.js';
 import axios from 'axios';
-import { verifyPaymentTransactionWithPaymentRecord } from '../transaction-validation/validate-discovered-payment-transaction.service.js';
+import {
+    verifyPaymentRecordWithHeliusEnhancedTransaction,
+    verifyPaymentTransactionWithPaymentRecord,
+} from '../transaction-validation/validate-discovered-payment-transaction.service.js';
 import { web3 } from '@project-serum/anchor';
 import { sendPaymentResolveRetryMessage } from '../sqs/sqs-send-message.service.js';
 import { validatePaymentSessionResolved } from '../shopify/validate-payment-session-resolved.service.js';
 import * as Sentry from '@sentry/serverless';
+import { fetchTransaction } from '../fetch-transaction.service.js';
+import { delay } from '../../utilities/delay.utility.js';
 
 export const processDiscoveredPaymentTransaction = async (
     transactionRecord: TransactionRecord,
-    transaction: web3.Transaction | null,
+    transaction: HeliusEnhancedTransaction,
     prisma: PrismaClient
 ) => {
     const paymentRecordService = new PaymentRecordService(prisma);
@@ -32,7 +37,7 @@ export const processDiscoveredPaymentTransaction = async (
         throw new Error('Transaction record does not have a payment record id');
     }
 
-    let paymentRecord = await paymentRecordService.getPaymentRecord({
+    const paymentRecord = await paymentRecordService.getPaymentRecord({
         id: transactionRecord.paymentRecordId,
     });
 
@@ -79,8 +84,19 @@ export const processDiscoveredPaymentTransaction = async (
         throw new Error('Access token not found on merchant.');
     }
 
+    verifyPaymentRecordWithHeliusEnhancedTransaction(paymentRecord, transaction, true); // TODO: Uncomment this
+
+    let rpcTransaction: web3.Transaction | null = null;
+
+    while (rpcTransaction == null) {
+        try {
+            await delay(3000);
+            rpcTransaction = await fetchTransaction(transactionRecord.signature);
+        } catch (error) {}
+    }
+
     // Verify against the payment record, if we throw in here, we should catch outside of this for logging
-    // verifyPaymentTransactionWithPaymentRecord(paymentRecord, transaction, true); // TODO: Uncomment this
+    verifyPaymentTransactionWithPaymentRecord(paymentRecord, rpcTransaction, true); // TODO: Uncomment this
 
     // -- if we get here, we found a match! --
     // we would hope at this point we could update the database to reflect we found it's match

@@ -1,18 +1,15 @@
 import * as Sentry from '@sentry/serverless';
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { parseAndValidateShopifyPaymentInitiation } from '../../models/shopify/process-payment-request.model.js';
+import {
+    ShopifyPaymentInitiation,
+    parseAndValidateShopifyPaymentInitiation,
+} from '../../models/shopify/process-payment-request.model.js';
 import { requestErrorResponse } from '../../utilities/responses/request-response.utility.js';
-import { PrismaClient } from '@prisma/client';
+import { Merchant, PaymentRecord, PrismaClient } from '@prisma/client';
 import { PaymentRecordService } from '../../services/database/payment-record-service.database.service.js';
 import { MerchantService } from '../../services/database/merchant-service.database.service.js';
-import { convertAmountAndCurrencyToUsdcSize } from '../../services/coin-gecko.service.js';
 import { generatePubkeyString } from '../../utilities/pubkeys.utility.js';
-import {
-    ErrorMessage,
-    ErrorType,
-    errorResponse,
-    errorTypeForError,
-} from '../../utilities/responses/error-response.utility.js';
+import { ErrorMessage, ErrorType, errorResponse } from '../../utilities/responses/error-response.utility.js';
 
 const prisma = new PrismaClient();
 
@@ -42,40 +39,62 @@ export const payment = Sentry.AWSLambda.wrapHandler(
             return errorResponse(ErrorType.badRequest, ErrorMessage.missingHeader);
         }
 
-        const merchant = await merchantService.getMerchant({ shop: shop });
+        let merchant: Merchant | null;
+
+        try {
+            merchant = await merchantService.getMerchant({ shop: shop });
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.databaseAccessError);
+        }
 
         if (merchant == null) {
             return errorResponse(ErrorType.notFound, ErrorMessage.unknownMerchant);
         }
 
-        let paymentInitiation;
+        let paymentInitiation: ShopifyPaymentInitiation;
 
         try {
             paymentInitiation = parseAndValidateShopifyPaymentInitiation(JSON.parse(event.body));
         } catch (error) {
+            // TODO: Correct error response
             return requestErrorResponse(error);
         }
 
-        let paymentRecord = await paymentRecordService.getPaymentRecord({
-            shopId: paymentInitiation.id,
-        });
+        let paymentRecord: PaymentRecord | null;
 
-        if (paymentRecord == null) {
-            try {
-                // const usdcSize = await convertAmountAndCurrencyToUsdcSize(
-                //     paymentInitiation.amount,
-                //     paymentInitiation.currency
-                // );
+        try {
+            paymentRecord = await paymentRecordService.getPaymentRecord({
+                shopId: paymentInitiation.id,
+            });
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.databaseAccessError);
+        }
+
+        try {
+            if (paymentRecord == null) {
+                let usdcSize: number;
+
+                if (paymentInitiation.test) {
+                    usdcSize = 0.0001;
+                } else {
+                    // TODO: We had a bug here, figure it out and fix it, for now, setting to 0.0001
+                    // usdcSize = await convertAmountAndCurrencyToUsdcSize(
+                    //     paymentInitiation.amount,
+                    //     paymentInitiation.currency
+                    // );
+                    usdcSize = 0.0001;
+                }
+
                 const newPaymentRecordId = await generatePubkeyString();
                 paymentRecord = await paymentRecordService.createPaymentRecord(
                     newPaymentRecordId,
                     paymentInitiation,
                     merchant,
-                    0.001
+                    usdcSize
                 );
-            } catch (error) {
-                return requestErrorResponse(error);
             }
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.incompatibleDatabaseRecords);
         }
 
         return {
