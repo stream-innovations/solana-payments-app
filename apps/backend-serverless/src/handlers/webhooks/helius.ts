@@ -6,8 +6,8 @@ import {
 } from '../../models/dependencies/helius-enhanced-transaction.model.js';
 import { PrismaClient, TransactionType } from '@prisma/client';
 import { TransactionRecordService } from '../../services/database/transaction-record-service.database.service.js';
-import { processDiscoveredPaymentTransaction } from '../../services/buisness-logic/process-discovered-payment-transaction.service.js';
-import { processDiscoveredRefundTransaction } from '../../services/buisness-logic/process-discovered-refund-transaction.service.js';
+import { processDiscoveredPaymentTransaction } from '../../services/business-logic/process-discovered-payment-transaction.service.js';
+import { processDiscoveredRefundTransaction } from '../../services/business-logic/process-discovered-refund-transaction.service.js';
 import { ErrorMessage, ErrorType, errorResponse } from '../../utilities/responses/error-response.utility.js';
 
 const prisma = new PrismaClient();
@@ -23,8 +23,20 @@ export const helius = Sentry.AWSLambda.wrapHandler(
         let heliusEnhancedTransactions: HeliusEnhancedTransactionArray;
         const transactionRecordService = new TransactionRecordService(prisma);
 
+        console.log('in helius');
+
         if (event.body == null) {
             return errorResponse(ErrorType.badRequest, ErrorMessage.missingBody);
+        }
+
+        const requiredAuthorizationHeader = process.env.HELIUS_AUTHORIZATION;
+
+        if (requiredAuthorizationHeader != null) {
+            const authorizationHeader = event.headers['authorization'];
+
+            if (authorizationHeader !== requiredAuthorizationHeader) {
+                return errorResponse(ErrorType.unauthorized, ErrorMessage.missingHeader);
+            }
         }
 
         try {
@@ -38,6 +50,8 @@ export const helius = Sentry.AWSLambda.wrapHandler(
             return errorResponse(ErrorType.badRequest, ErrorMessage.invalidRequestBody);
         }
 
+        console.log('parsed helius');
+
         for (const heliusTransaction of heliusEnhancedTransactions) {
             try {
                 const transactionRecord = await transactionRecordService.getTransactionRecord({
@@ -50,8 +64,11 @@ export const helius = Sentry.AWSLambda.wrapHandler(
                     throw new Error('Transaction record not found');
                 }
 
+                console.log('got transaction record');
+
                 switch (transactionRecord.type) {
                     case TransactionType.payment:
+                        console.log('its a payment');
                         await processDiscoveredPaymentTransaction(transactionRecord, heliusTransaction, prisma);
                         break;
                     case TransactionType.refund:

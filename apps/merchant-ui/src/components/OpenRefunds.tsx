@@ -1,18 +1,20 @@
-import { twMerge } from 'tailwind-merge';
-import { format, set } from 'date-fns';
-import * as Dialog from '@radix-ui/react-dialog';
-import { useEffect, useRef, useState } from 'react';
+import { PaginatedTable } from '@/components/PaginatedTable';
+import { useToast } from '@/components/ToastProvider';
 import * as RE from '@/lib/Result';
+import { abbreviateAddress } from '@/lib/abbreviateAddress';
+import { API_ENDPOINTS } from '@/lib/endpoints';
 import { formatPrice } from '@/lib/formatPrice';
+import { RefundStatus, useOpenRefundStore } from '@/stores/refundStore';
+import * as Dialog from '@radix-ui/react-dialog';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import { Transaction } from '@solana/web3.js';
+import axios from 'axios';
+import { format } from 'date-fns';
+import { useEffect, useRef, useState } from 'react';
+import { twMerge } from 'tailwind-merge';
 import * as Button from './Button';
 import { Close } from './icons/Close';
-import { abbreviateAddress } from '@/lib/abbreviateAddress';
-import axios from 'axios';
-import { API_ENDPOINTS } from '@/lib/endpoints';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { Transaction } from '@solana/web3.js';
-import { PaginatedTable } from '@/components/PaginatedTable';
-import { RefundStatus, useOpenRefundStore } from '@/stores/refundStore';
 
 interface Props {
     className?: string;
@@ -27,15 +29,19 @@ export function OpenRefunds(props: Props) {
     const openRefunds = useOpenRefundStore(state => state.openRefunds);
     const getOpenRefunds = useOpenRefundStore(state => state.getOpenRefunds);
 
-    const { publicKey, sendTransaction, signTransaction, connect, connected, wallets, select } = useWallet();
+    const { publicKey, sendTransaction, wallet, connect, disconnect, connected, wallets, select } = useWallet();
     const { connection } = useConnection();
     const [approvePending, setApprovePending] = useState(false);
     const [denyPending, setDenyPending] = useState(false);
     const [openApprove, setOpenApprove] = useState<string | null>(null);
     const [denyApprove, setDenyApprove] = useState<string | null>(null);
 
+    const [walletModalActive, setWalletModalActive] = useState(false);
+
     const approvePendingRef = useRef(approvePending);
     const denyPendingRef = useRef(denyPending);
+
+    const showToast = useToast();
 
     const headers = {
         'Content-Type': 'application/json',
@@ -47,24 +53,21 @@ export function OpenRefunds(props: Props) {
         }
     }, [openRefunds]);
 
-    async function getRefundTransaction(refundId: string) {
+    useEffect(() => {
+        setWalletModalActive(false);
+    }, [wallet]);
+
+    async function getRefundTransaction(refundIdToProcess: string) {
         setApprovePending(true);
         approvePendingRef.current = true;
-
-        try {
-            if (!connected) {
-                await select(wallets[0].adapter.name);
-                await connect();
-            }
-        } catch (error) {
-            console.log('connect error', error);
+        if (!publicKey) {
+            return;
         }
-
         try {
             const response = await axios.post(
-                API_ENDPOINTS.refundTransaction + '?refundId=' + refundId,
+                API_ENDPOINTS.refundTransaction + '?refundId=' + refundIdToProcess,
                 {
-                    account: publicKey ? publicKey.toBase58() : '',
+                    account: publicKey.toBase58(),
                 },
                 { headers: headers }
             );
@@ -72,7 +75,7 @@ export function OpenRefunds(props: Props) {
             const transaction = Transaction.from(buffer);
             await sendTransaction(transaction, connection);
             while (approvePendingRef.current) {
-                const status = await axios.get(API_ENDPOINTS.refundStatus + '?shopId=' + refundId, {
+                const status = await axios.get(API_ENDPOINTS.refundStatus + '?shopId=' + refundIdToProcess, {
                     headers: headers,
                 });
                 await new Promise(resolve => setTimeout(resolve, 500));
@@ -81,7 +84,12 @@ export function OpenRefunds(props: Props) {
                 }
             }
         } catch (error) {
-            console.log('error: ', error);
+            if (error instanceof Error) {
+                showToast && showToast(error.message);
+                console.log('Approving refund error: ', error);
+            } else {
+                console.log('Unexpected error', error);
+            }
         }
 
         if (approvePendingRef.current) {
@@ -109,11 +117,17 @@ export function OpenRefunds(props: Props) {
                 }
             }
         } catch (error) {
-            console.log('reject error: ', error);
+            if (error instanceof Error) {
+                showToast && showToast(error.message);
+                console.log('Rejecting refund error: ', error);
+            } else {
+                console.log('Unexpected error', error);
+            }
         }
 
         if (denyPendingRef.current) {
             await getOpenRefunds(page);
+            setDenyApprove(null);
             setDenyPending(false);
         }
     }
@@ -239,8 +253,18 @@ export function OpenRefunds(props: Props) {
                                 </Dialog.Overlay>
                             </Dialog.Portal>
                         </Dialog.Root>
-                        <Dialog.Root open={openApprove === refund.orderId} onOpenChange={() => setOpenApprove(null)}>
-                            <Button.Primary onClick={() => setOpenApprove(refund.orderId)}>Approve</Button.Primary>
+                        <Dialog.Root
+                            open={openApprove === refund.orderId && !walletModalActive}
+                            onOpenChange={() => setOpenApprove(null)}
+                        >
+                            <Button.Primary
+                                onClick={() => {
+                                    setOpenApprove(refund.orderId);
+                                    setWalletModalActive(false);
+                                }}
+                            >
+                                Approve
+                            </Button.Primary>
                             <Dialog.Portal>
                                 <Dialog.Overlay
                                     className={twMerge(
@@ -305,12 +329,37 @@ export function OpenRefunds(props: Props) {
                                             </div>
                                         </div>
                                         <div className="bg-slate-50 p-4 flex justify-end">
-                                            <Button.Primary
-                                                onClick={() => getRefundTransaction(refund.orderId)}
-                                                pending={approvePending}
-                                            >
-                                                Approve with Wallet
-                                            </Button.Primary>
+                                            {!connected ? (
+                                                <WalletMultiButton
+                                                    onClick={() => {
+                                                        setWalletModalActive(true);
+                                                    }}
+                                                    style={{
+                                                        backgroundColor: 'black',
+                                                        width: '100%',
+                                                        display: 'flex',
+                                                        justifyContent: 'center',
+                                                        alignItems: 'center',
+                                                        zIndex: 1000,
+                                                    }}
+                                                >
+                                                    <div className="flex flex-row items-center justify-center">
+                                                        <div className="pl-1">Connect wallet</div>
+                                                    </div>
+                                                </WalletMultiButton>
+                                            ) : (
+                                                <div className="flex flex-row space-x-2">
+                                                    <Button.Secondary onClick={disconnect}>
+                                                        Disconnect Wallet
+                                                    </Button.Secondary>
+                                                    <Button.Primary
+                                                        onClick={() => getRefundTransaction(refund.orderId)}
+                                                        pending={approvePending}
+                                                    >
+                                                        Approve
+                                                    </Button.Primary>
+                                                </div>
+                                            )}
                                         </div>
                                     </Dialog.Content>
                                 </Dialog.Overlay>

@@ -2,7 +2,7 @@ import React, { useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { useSelector } from 'react-redux';
 import axios from 'axios';
-import { web3 } from '@project-serum/anchor';
+import * as web3 from '@solana/web3.js';
 import { getPaymentId } from '@/features/pay-tab/paySlice';
 import { buildPaymentTransactionRequestEndpoint } from '@/utility/endpoints.utility';
 
@@ -41,7 +41,7 @@ const BuyButton = () => {
             onClick={async () => {
                 await fetchAndSendTransaction();
             }}
-            className="btn w-full bg-black text-white py-4 pt-3 text-base rounded-md shadow-lg font-semibold flex justify-center items-center"
+            className="btn w-full bg-black text-white py-4 pt-3 text-base rounded-md shadow-lg font-semibold flex justify-center items-center normal-case"
         >
             Buy Now
         </button>

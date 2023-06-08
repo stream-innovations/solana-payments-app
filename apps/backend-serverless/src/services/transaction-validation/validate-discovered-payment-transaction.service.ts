@@ -1,6 +1,6 @@
 import { PaymentRecord } from '@prisma/client';
 import { USDC_MINT } from '../../configs/tokens.config.js';
-import { web3 } from '@project-serum/anchor';
+import * as web3 from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, decodeTransferCheckedInstruction } from '@solana/spl-token';
 import { HeliusEnhancedTransaction } from '../../models/dependencies/helius-enhanced-transaction.model.js';
 
@@ -177,4 +177,4 @@ export const verifySingleUseInstructionWithHeliusEnhancedTransaction = (transact
 };
 
 // TODO: Is there a better way to do this?
-export const historicalFeePays = ['9hBUxihyvswYSExF8s7K5SZiS3XztF3DAT7eTZ5krx4T'];
+export const historicalFeePays = ['3Rpu9bLp3rwZdBF7kF378Grp95V5sv3dEDR2T1p7ziwY'];

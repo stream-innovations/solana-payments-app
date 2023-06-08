@@ -4,6 +4,8 @@ useDotenv: true
 provider:
   name: aws
   runtime: nodejs18.x
+  httpApi:
+    cors: true
   environment:
     SHOPIFY_SECRET_KEY: ${env:SHOPIFY_SECRET_KEY}
     SHOPIFY_CLIENT_ID: ${env:SHOPIFY_CLIENT_ID}
@@ -27,6 +29,8 @@ provider:
     AWS_SHOPIFY_MUTATION_QUEUE_URL: ${env:AWS_SHOPIFY_MUTATION_QUEUE_URL}
     SENTRY_DSN: ${env:SENTRY_DSN}
     SENTRY_RELEASE: ${env:SENTRY_RELEASE}
+    # LOCAL_GAS: ${env:LOCAL_GAS}
+    HELIUS_AUTHORIZATION: ${env:HELIUS_AUTHORIZATION}
 package:
   excludeDevDependencies: true
   patterns:

@@ -38,6 +38,12 @@ enum RefundRecordStatus {
   rejected
 }
 
+enum KybState {
+  pending
+  failed
+  finished
+}
+
 model Merchant {
   id             String          @id // Internal ID
   shop           String          @unique
@@ -49,6 +55,8 @@ model Merchant {
   paymentRecords PaymentRecord[]
   refundRecords  RefundRecord[]
   paymentAddress String?
+  kybInquiry     String?
+  kybState       KybState?
 
   acceptedTermsAndConditions Boolean @default(false)
   dismissCompleted           Boolean @default(false)
@@ -106,4 +114,10 @@ model TransactionRecord {
   refundRecord    RefundRecord?   @relation(fields: [refundRecordId], references: [id])
   refundRecordId  String?
   createdAt       DateTime        @default(now())
+}
+
+model GDPR {
+  id         Int     @id @default(autoincrement())
+  merchantId String
+  completed  Boolean
 }

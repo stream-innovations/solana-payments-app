@@ -1,7 +1,6 @@
-import { twMerge } from 'tailwind-merge';
-import { useEffect, useState } from 'react';
-
 import * as RE from '@/lib/Result';
+import { useEffect, useState } from 'react';
+import { twMerge } from 'tailwind-merge';
 import { PaginatedTableArrowButton } from './PaginatedTableArrowButton';
 import { PaginatedTablePageIndicator } from './PaginatedTablePageIndicator';
 
@@ -242,19 +241,7 @@ export function PaginatedTable<R extends { [key: string]: any }, CO extends (key
                     </div>
                 </div>
             </div>
-            {RE.match(
-                props.curPage,
-                () => (
-                    <div />
-                ),
-                () => (
-                    <div />
-                ),
-                rowsInPage => (
-                    <></>
-                )
-            )}
-            {props.numPages > 1 ? (
+            {props.numPages > 1 && (
                 <div className="flex items-center justify-between mt-4 md:mt-7">
                     <PaginatedTableArrowButton
                         direction="left"
@@ -267,10 +254,6 @@ export function PaginatedTable<R extends { [key: string]: any }, CO extends (key
                         disabled={page === numPages - 1}
                         onClick={() => setPage(cur => (cur < numPages - 1 ? cur + 1 : numPages - 1))}
                     />
-                </div>
-            ) : (
-                <div className="flex justify-center">
-                    <PaginatedTablePageIndicator curPage={page} numPages={numPages} onSelectPage={setPage} />
                 </div>
             )}
         </div>

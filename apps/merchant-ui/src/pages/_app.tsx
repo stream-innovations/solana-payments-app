@@ -1,22 +1,17 @@
+import { CustomToastProvider } from '@/components/ToastProvider';
+import { useMerchantStore } from '@/stores/merchantStore';
+import { usePaymentStore } from '@/stores/paymentStore';
+import { useClosedRefundStore, useOpenRefundStore } from '@/stores/refundStore';
 import '@/styles/globals.css';
-import type { AppProps } from 'next/app';
-import Head from 'next/head';
 import { Provider as TooltipProvider } from '@radix-ui/react-tooltip';
-import { FC, ReactNode, useEffect, useMemo } from 'react';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
-import { clusterApiUrl } from '@solana/web3.js';
-import {
-    BackpackWalletAdapter,
-    GlowWalletAdapter,
-    PhantomWalletAdapter,
-    SlopeWalletAdapter,
-} from '@solana/wallet-adapter-wallets';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
-import { useMerchantStore } from '@/stores/merchantStore';
-import { useClosedRefundStore, useOpenRefundStore } from '@/stores/refundStore';
-import { get } from 'http';
-import { usePaymentStore } from '@/stores/paymentStore';
+import '@solana/wallet-adapter-react-ui/styles.css';
+import { clusterApiUrl } from '@solana/web3.js';
+import type { AppProps } from 'next/app';
+import Head from 'next/head';
+import { FC, ReactNode, useEffect, useMemo } from 'react';
 
 export default function App({ Component, pageProps }: AppProps) {
     const getMerchantInfo = useMerchantStore(state => state.getMerchantInfo);
@@ -37,11 +32,13 @@ export default function App({ Component, pageProps }: AppProps) {
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <link rel="icon" href="/favicon.ico" />
             </Head>
-            <TooltipProvider>
-                <Context>
-                    <Component {...pageProps} />
-                </Context>
-            </TooltipProvider>
+            <CustomToastProvider>
+                <TooltipProvider>
+                    <Context>
+                        <Component {...pageProps} />
+                    </Context>
+                </TooltipProvider>
+            </CustomToastProvider>
         </>
     );
 }
@@ -52,15 +49,7 @@ const Context: FC<{ children: ReactNode }> = ({ children }) => {
     const endpoint = useMemo(() => clusterApiUrl(network), [network]);
     // const endpoint = useMemo(() => "http://localhost:8899");
 
-    const wallets = useMemo(
-        () => [
-            new PhantomWalletAdapter(),
-            new SlopeWalletAdapter(),
-            new BackpackWalletAdapter(),
-            new GlowWalletAdapter(),
-        ],
-        []
-    );
+    const wallets = useMemo(() => [], []);
 
     return (
         <div>

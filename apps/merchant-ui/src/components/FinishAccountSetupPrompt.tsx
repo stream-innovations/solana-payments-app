@@ -1,14 +1,17 @@
-import { twMerge } from 'tailwind-merge';
+import { LoadingDots } from '@/components/LoadingDots';
+import * as RE from '@/lib/Result';
+import { isOk } from '@/lib/Result';
+import { updateMerchantTos, useMerchantStore } from '@/stores/merchantStore';
+import Policy from '@carbon/icons-react/lib/Policy';
+import Store from '@carbon/icons-react/lib/Store';
+import Wallet from '@carbon/icons-react/lib/Wallet';
+import Link from 'next/link';
 import { useRouter } from 'next/router';
-
+import { useEffect, useState } from 'react';
+import { twMerge } from 'tailwind-merge';
+import { Primary } from './Button';
 import { FinishAccountSetupPromptListItem } from './FinishAccountSetupPromptListItem';
 import { KYBButton } from './KYBButton';
-import { Primary } from './Button';
-import { isOk } from '@/lib/Result';
-import { LoadingDots } from '@/components/LoadingDots';
-import { useEffect, useState } from 'react';
-import Link from 'next/link';
-import { updateMerchantTos, useMerchantStore } from '@/stores/merchantStore';
 
 export enum RemainingSetupItem {
     VerifyBusiness,
@@ -33,6 +36,17 @@ function getItemTitle(item: RemainingSetupItem) {
     }
 }
 
+function getItemImage(item: RemainingSetupItem) {
+    switch (item) {
+        case RemainingSetupItem.AcceptTerms:
+            return <Policy />;
+        case RemainingSetupItem.AddWallet:
+            return <Wallet />;
+        case RemainingSetupItem.VerifyBusiness:
+            return <Store />;
+    }
+}
+
 interface Props {
     className?: string;
     onBeginSetupItem?(setupItem: RemainingSetupItem): void;
@@ -51,6 +65,8 @@ export function FinishAccountSetupPrompt(props: Props) {
         RemainingSetupItem.AddWallet,
         RemainingSetupItem.VerifyBusiness,
     ]);
+
+    const kybState = RE.isOk(merchantInfo) ? merchantInfo.data.kybState : null;
 
     useEffect(() => {
         if (!isOk(merchantInfo)) {
@@ -71,7 +87,7 @@ export function FinishAccountSetupPrompt(props: Props) {
             case RemainingSetupItem.AddWallet:
                 return merchantInfo.data.paymentAddress !== null;
             case RemainingSetupItem.VerifyBusiness:
-                return true;
+                return merchantInfo.data.kybState === 'finished';
         }
     }
 
@@ -119,15 +135,15 @@ export function FinishAccountSetupPrompt(props: Props) {
             <div className="text-black font-semibold text-lg">Finish setting up your account:</div>
             {STEPS.map((step, i) => (
                 <FinishAccountSetupPromptListItem
-                    additionalText={step === RemainingSetupItem.VerifyBusiness ? '• Takes ~5m' : undefined}
+                    additionalText={step === RemainingSetupItem.VerifyBusiness && !kybState ? '• Takes ~5m' : undefined}
                     className={twMerge('py-5', i > 0 && 'border-t border-slate-200')}
                     completed={isStepCompleted(step)}
-                    img=""
+                    icon={getItemImage(step)}
                     key={i}
                     title={getItemTitle(step)}
                     renderTrigger={
                         step === RemainingSetupItem.VerifyBusiness
-                            ? () => <div />
+                            ? () => <KYBButton />
                             : step === RemainingSetupItem.AcceptTerms
                             ? () => (
                                   <Primary onClick={updateMerchantTosClick} pending={pendingTos}>
