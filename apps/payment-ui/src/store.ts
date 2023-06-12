@@ -1,11 +1,13 @@
 import { configureStore, combineReducers } from '@reduxjs/toolkit';
 import payReducer from './features/pay-tab/paySlice';
-import viewportReducer from './features/is-mobile/viewPortSlice';
+import mobileReducer from './features/mobile/mobileSlice';
+import errorReducer from './features/error/errorSlice';
 
 export const store = configureStore({
     reducer: {
         pay: payReducer,
-        viewport: viewportReducer,
+        mobile: mobileReducer,
+        error: errorReducer,
     },
 });
 

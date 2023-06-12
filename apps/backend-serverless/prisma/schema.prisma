@@ -56,7 +56,8 @@ model Merchant {
   refundRecords  RefundRecord[]
   paymentAddress String?
   kybInquiry     String?
-  kybState       KybState?
+  kybState       KybState        @default(pending)
+  active         Boolean         @default(false)
 
   acceptedTermsAndConditions Boolean @default(false)
   dismissCompleted           Boolean @default(false)
@@ -82,6 +83,8 @@ model PaymentRecord {
   completedAt          DateTime?
   refundRecord         RefundRecord[]
   rejectionReason      PaymentRecordRejectionReason?
+
+  @@index(merchantId)
 }
 
 model RefundRecord {
@@ -103,6 +106,9 @@ model RefundRecord {
 
   requestedAt DateTime  @default(now())
   completedAt DateTime?
+
+  @@index(merchantId)
+  @@index(shopPaymentId)
 }
 
 model TransactionRecord {
@@ -114,6 +120,9 @@ model TransactionRecord {
   refundRecord    RefundRecord?   @relation(fields: [refundRecordId], references: [id])
   refundRecordId  String?
   createdAt       DateTime        @default(now())
+
+  @@index(paymentRecordId)
+  @@index(refundRecordId)
 }
 
 model GDPR {

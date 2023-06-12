@@ -1,5 +1,6 @@
 import * as RE from '@/lib/Result';
 import { formatPrice } from '@/lib/formatPrice';
+import { useMerchantStore } from '@/stores/merchantStore';
 import { usePaymentStore } from '@/stores/paymentStore';
 import { format } from 'date-fns';
 import { useEffect, useState } from 'react';
@@ -15,7 +16,10 @@ interface Props {
 export function PaymentsHistory(props: Props) {
     const [page, setPage] = useState(0);
     const [totalNumPages, setTotalNumPages] = useState(0);
+
+    const merchantInfo = useMerchantStore(state => state.merchantInfo);
     const payments = usePaymentStore(state => state.payments);
+    const getPayments = usePaymentStore(state => state.getPayments);
 
     useEffect(() => {
         if (RE.isOk(payments) && payments.data.totalPages !== totalNumPages) {
@@ -23,7 +27,32 @@ export function PaymentsHistory(props: Props) {
         }
     }, [payments]);
 
-    if (RE.isOk(payments) && payments.data.totalPages === 0) {
+    useEffect(() => {
+        getPayments(page);
+
+        const intervalId = setInterval(() => {
+            getPayments(page);
+        }, 5000);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
+    if (RE.isFailed(merchantInfo)) {
+        return (
+            <div className={props.className}>
+                <div className="flex flex-col justify-center h-full ">
+                    <div className="mt-4 text-center">
+                        <h1 className="text-2xl font-semibold">This Merchant does not exist</h1>
+                        <p className="text-lg  mt-2">Please Log in with a different Merchant account</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (RE.isOk(payments) && payments.data.payments.length === 0) {
         return (
             <div className={props.className}>
                 <div>
@@ -43,7 +72,7 @@ export function PaymentsHistory(props: Props) {
         <div className={props.className}>
             <Tabs.Root defaultValue="all-payments">
                 <Tabs.List>
-                    <Tabs.Trigger value="all-payments">Open requests</Tabs.Trigger>
+                    <Tabs.Trigger value="all-payments">All Payments</Tabs.Trigger>
                 </Tabs.List>
                 <Tabs.Content value="all-payments">
                     <PaginatedTable
@@ -59,7 +88,10 @@ export function PaymentsHistory(props: Props) {
                         numPages={totalNumPages}
                         rowHeight="h-20"
                         rowsPerPage={7}
-                        onPageChange={setPage}
+                        onPageChange={e => {
+                            setPage(e);
+                            getPayments(e);
+                        }}
                     >
                         {{
                             amount: amount => (

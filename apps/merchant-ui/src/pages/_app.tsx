@@ -1,4 +1,4 @@
-import { CustomToastProvider } from '@/components/ToastProvider';
+import { Toaster } from '@/components/ui/toaster';
 import { useMerchantStore } from '@/stores/merchantStore';
 import { usePaymentStore } from '@/stores/paymentStore';
 import { useClosedRefundStore, useOpenRefundStore } from '@/stores/refundStore';
@@ -24,7 +24,7 @@ export default function App({ Component, pageProps }: AppProps) {
         getOpenRefunds(0).catch(console.error); // Fetch open refunds when App loads
         getClosedRefunds(0).catch(console.error); // Fetch open refunds when App loads
         getPayments(0).catch(console.error); // Fetch open refunds when App loads
-    }, [getMerchantInfo]); // Dependency array
+    }, []); // Dependency array
 
     return (
         <>
@@ -32,13 +32,12 @@ export default function App({ Component, pageProps }: AppProps) {
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <link rel="icon" href="/favicon.ico" />
             </Head>
-            <CustomToastProvider>
-                <TooltipProvider>
-                    <Context>
-                        <Component {...pageProps} />
-                    </Context>
-                </TooltipProvider>
-            </CustomToastProvider>
+            <TooltipProvider>
+                <Context>
+                    <Component {...pageProps} />
+                </Context>
+                <Toaster />
+            </TooltipProvider>
         </>
     );
 }

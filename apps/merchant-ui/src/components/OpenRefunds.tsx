@@ -1,15 +1,15 @@
 import { PaginatedTable } from '@/components/PaginatedTable';
-import { useToast } from '@/components/ToastProvider';
+import { useToast } from '@/components/ui/use-toast';
 import * as RE from '@/lib/Result';
 import { abbreviateAddress } from '@/lib/abbreviateAddress';
 import { API_ENDPOINTS } from '@/lib/endpoints';
 import { formatPrice } from '@/lib/formatPrice';
+import { useMerchantStore } from '@/stores/merchantStore';
 import { RefundStatus, useOpenRefundStore } from '@/stores/refundStore';
 import * as Dialog from '@radix-ui/react-dialog';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { Transaction } from '@solana/web3.js';
-import axios from 'axios';
 import { format } from 'date-fns';
 import { useEffect, useRef, useState } from 'react';
 import { twMerge } from 'tailwind-merge';
@@ -28,6 +28,7 @@ export function OpenRefunds(props: Props) {
 
     const openRefunds = useOpenRefundStore(state => state.openRefunds);
     const getOpenRefunds = useOpenRefundStore(state => state.getOpenRefunds);
+    const merchantInfo = useMerchantStore(state => state.merchantInfo);
 
     const { publicKey, sendTransaction, wallet, connect, disconnect, connected, wallets, select } = useWallet();
     const { connection } = useConnection();
@@ -35,13 +36,14 @@ export function OpenRefunds(props: Props) {
     const [denyPending, setDenyPending] = useState(false);
     const [openApprove, setOpenApprove] = useState<string | null>(null);
     const [denyApprove, setDenyApprove] = useState<string | null>(null);
+    const [refundIdToProcess, setRefundIdToProcess] = useState<string | null>(null);
 
     const [walletModalActive, setWalletModalActive] = useState(false);
 
     const approvePendingRef = useRef(approvePending);
     const denyPendingRef = useRef(denyPending);
 
-    const showToast = useToast();
+    const { toast } = useToast();
 
     const headers = {
         'Content-Type': 'application/json',
@@ -54,6 +56,18 @@ export function OpenRefunds(props: Props) {
     }, [openRefunds]);
 
     useEffect(() => {
+        getOpenRefunds(page);
+
+        const intervalId = setInterval(() => {
+            getOpenRefunds(page);
+        }, 5000);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
+
+    useEffect(() => {
         setWalletModalActive(false);
     }, [wallet]);
 
@@ -64,28 +78,45 @@ export function OpenRefunds(props: Props) {
             return;
         }
         try {
-            const response = await axios.post(
-                API_ENDPOINTS.refundTransaction + '?refundId=' + refundIdToProcess,
-                {
+            const response = await fetch(`${API_ENDPOINTS.refundTransaction}?refundId=${refundIdToProcess}`, {
+                method: 'POST',
+                headers: headers,
+                body: JSON.stringify({
                     account: publicKey.toBase58(),
-                },
-                { headers: headers }
-            );
-            const buffer = Buffer.from(response.data.transaction, 'base64');
+                }),
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const buffer = Buffer.from(data.transaction, 'base64');
             const transaction = Transaction.from(buffer);
             await sendTransaction(transaction, connection);
             while (approvePendingRef.current) {
-                const status = await axios.get(API_ENDPOINTS.refundStatus + '?shopId=' + refundIdToProcess, {
+                const statusResponse = await fetch(`${API_ENDPOINTS.refundStatus}?shopId=${refundIdToProcess}`, {
                     headers: headers,
                 });
+                const statusData = await statusResponse.json();
+                if (!statusResponse.ok) {
+                    throw new Error(`HTTP error! status: ${statusResponse.status}`);
+                }
                 await new Promise(resolve => setTimeout(resolve, 500));
-                if (status.data.refundStatus.status !== RefundStatus.Pending) {
+                if (statusData.refundStatus.status !== RefundStatus.Pending) {
                     break;
                 }
             }
+            toast({
+                title: 'Successfully Approved Refund!',
+                variant: 'constructive',
+            });
         } catch (error) {
             if (error instanceof Error) {
-                showToast && showToast(error.message);
+                toast({
+                    title: 'Error Approving Refund',
+                    description: error.message,
+                    variant: 'destructive',
+                });
                 console.log('Approving refund error: ', error);
             } else {
                 console.log('Unexpected error', error);
@@ -99,26 +130,45 @@ export function OpenRefunds(props: Props) {
         }
     }
 
-    async function rejectRefund(refundId: string) {
+    async function rejectRefund(refundId: string, refundReason: string) {
         setDenyPending(true);
         denyPendingRef.current = true;
         try {
-            const response = await axios.post(
-                API_ENDPOINTS.rejectRefund + '?refundId=' + refundId + '&merchantReason=' + 'test_reason',
-                { headers: headers }
+            const response = await fetch(
+                `${API_ENDPOINTS.rejectRefund}?refundId=${refundId}&merchantReason=test_reason`,
+                {
+                    method: 'POST',
+                    headers: headers,
+                }
             );
 
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
             while (denyPendingRef.current) {
-                const status = await axios.get(API_ENDPOINTS.refundStatus + '?shopId=' + refundId, {
+                const statusResponse = await fetch(`${API_ENDPOINTS.refundStatus}?shopId=${refundId}`, {
                     headers: headers,
                 });
-                if (status.data.refundStatus.status !== RefundStatus.Pending) {
+                const statusData = await statusResponse.json();
+                if (!statusResponse.ok) {
+                    throw new Error(`HTTP error! status: ${statusResponse.status}`);
+                }
+                if (statusData.refundStatus.status !== RefundStatus.Pending) {
                     break;
                 }
             }
+            toast({
+                title: 'Successfully Rejected Refund!',
+                variant: 'constructive',
+            });
         } catch (error) {
             if (error instanceof Error) {
-                showToast && showToast(error.message);
+                toast({
+                    title: 'Error Rejecting Refund',
+                    description: error.message,
+                    variant: 'destructive',
+                });
                 console.log('Rejecting refund error: ', error);
             } else {
                 console.log('Unexpected error', error);
@@ -130,6 +180,32 @@ export function OpenRefunds(props: Props) {
             setDenyApprove(null);
             setDenyPending(false);
         }
+    }
+
+    if (RE.isFailed(merchantInfo)) {
+        return (
+            <div className={props.className}>
+                <div className="flex flex-col justify-center h-full ">
+                    <div className="mt-4 text-center">
+                        <h1 className="text-2xl font-semibold">This Merchant does not exist</h1>
+                        <p className="text-lg  mt-2">Please Log in with a different Merchant account</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (RE.isOk(openRefunds) && openRefunds.data.refunds.length === 0) {
+        return (
+            <div className={props.className}>
+                <div>
+                    <div className="text-lg font-semibold md:px-7">Open Refunds</div>
+                    <div className="mt-8 text-center">
+                        <div className="text-sm font-medium text-neutral-600">No Pending Refunds!</div>
+                    </div>
+                </div>
+            </div>
+        );
     }
 
     return (
@@ -147,7 +223,10 @@ export function OpenRefunds(props: Props) {
             numPages={totalNumPages}
             rowHeight={'h-20'}
             rowsPerPage={5}
-            onPageChange={setPage}
+            onPageChange={e => {
+                setPage(e);
+                getOpenRefunds(e);
+            }}
         >
             {{
                 orderId: orderId => (
@@ -243,7 +322,7 @@ export function OpenRefunds(props: Props) {
                                         </div>
                                         <div className="bg-slate-50 p-4 flex justify-end">
                                             <Button.Primary
-                                                onClick={() => rejectRefund(refund.orderId)}
+                                                onClick={() => rejectRefund(refund.orderId, 'test reason')}
                                                 pending={denyPending}
                                             >
                                                 Deny Refund

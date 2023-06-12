@@ -1,11 +1,12 @@
-import { twMerge } from 'tailwind-merge';
 import { format } from 'date-fns';
+import { twMerge } from 'tailwind-merge';
 
+import { PaginatedTable } from '@/components/PaginatedTable';
 import * as RE from '@/lib/Result';
 import { formatPrice } from '@/lib/formatPrice';
-import { useEffect, useState } from 'react';
-import { PaginatedTable } from '@/components/PaginatedTable';
+import { useMerchantStore } from '@/stores/merchantStore';
 import { RefundStatus, useClosedRefundStore } from '@/stores/refundStore';
+import { useEffect, useState } from 'react';
 
 interface Props {
     className?: string;
@@ -15,13 +16,41 @@ export function ClosedRefunds(props: Props) {
     const [page, setPage] = useState(0);
     const [totalNumPages, setTotalNumPages] = useState(0);
 
+    const merchantInfo = useMerchantStore(state => state.merchantInfo);
     const closedRefunds = useClosedRefundStore(state => state.closedRefunds);
+    const getClosedRefunds = useClosedRefundStore(state => state.getClosedRefunds);
 
     useEffect(() => {
         if (RE.isOk(closedRefunds)) {
             setTotalNumPages(closedRefunds.data.totalPages);
         }
     }, [closedRefunds]);
+
+    if (RE.isFailed(merchantInfo)) {
+        return (
+            <div className={props.className}>
+                <div className="flex flex-col justify-center h-full ">
+                    <div className="mt-4 text-center">
+                        <h1 className="text-2xl font-semibold">This Merchant does not exist</h1>
+                        <p className="text-lg  mt-2">Please Log in with a different Merchant account</p>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (RE.isOk(closedRefunds) && closedRefunds.data.refunds.length === 0) {
+        return (
+            <div className={props.className}>
+                <div>
+                    <div className="text-lg font-semibold md:px-7">Closed Refunds</div>
+                    <div className="mt-8 text-center">
+                        <div className="text-sm font-medium text-neutral-600">No Closed Refunds!</div>
+                    </div>
+                </div>
+            </div>
+        );
+    }
 
     return (
         <PaginatedTable
@@ -38,7 +67,10 @@ export function ClosedRefunds(props: Props) {
             numPages={totalNumPages}
             rowHeight={'h-20'}
             rowsPerPage={5}
-            onPageChange={setPage}
+            onPageChange={e => {
+                setPage(e);
+                getClosedRefunds(e);
+            }}
         >
             {{
                 orderId: orderId => (
