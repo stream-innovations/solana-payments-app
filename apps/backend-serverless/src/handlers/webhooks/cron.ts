@@ -3,10 +3,10 @@ import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import { fetchEnhancedTransaction } from '../../services/helius.service.js';
 import { PrismaClient, TransactionRecord, TransactionType } from '@prisma/client';
 import { TransactionRecordService } from '../../services/database/transaction-record-service.database.service.js';
-import { processDiscoveredPaymentTransaction } from '../../services/business-logic/process-discovered-payment-transaction.service.js';
-import { processDiscoveredRefundTransaction } from '../../services/business-logic/process-discovered-refund-transaction.service.js';
 import { HeliusEnhancedTransaction } from '../../models/dependencies/helius-enhanced-transaction.model.js';
 import { ErrorMessage, ErrorType, errorResponse } from '../../utilities/responses/error-response.utility.js';
+import { processTransaction } from '../../services/business-logic/process-transaction.service.js';
+import axios from 'axios';
 
 const prisma = new PrismaClient();
 
@@ -52,18 +52,11 @@ export const cron = Sentry.AWSLambda.wrapHandler(
                 continue;
             }
 
+            const boo = {};
+
             try {
-                switch (transactionRecord.type) {
-                    case TransactionType.payment:
-                        await processDiscoveredPaymentTransaction(transactionRecord, transaction, prisma);
-                        break;
-                    case TransactionType.refund:
-                        await processDiscoveredRefundTransaction(transactionRecord, transaction, prisma);
-                        break;
-                }
+                await processTransaction(transaction, prisma, [], axios);
             } catch (error) {
-                // If we're catching here, it means we failed to get to the end of a processDiscoveredTransaction function
-                // This should only happen in odd situations that require investigation
                 Sentry.captureException(error);
                 continue;
             }

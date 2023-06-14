@@ -1,115 +1,88 @@
-import { PrismaClient, RefundRecordStatus, TransactionRecord, TransactionType } from '@prisma/client';
-import { HeliusEnhancedTransaction } from '../../models/dependencies/helius-enhanced-transaction.model.js';
-import { RefundRecordService } from '../database/refund-record-service.database.service.js';
-import { MerchantService } from '../database/merchant-service.database.service.js';
-import { makeRefundSessionResolve } from '../shopify/refund-session-resolve.service.js';
-import axios from 'axios';
-import {
-    verifyRefundRecordWithHeliusEnhancedTransaction,
-    verifyRefundTransactionWithRefundRecord,
-} from '../transaction-validation/validate-discovered-refund-transaction.service.js';
-import * as web3 from '@solana/web3.js';
-import { sendRefundResolveRetryMessage } from '../sqs/sqs-send-message.service.js';
-import { validateRefundSessionResolved } from '../shopify/validate-refund-session-resolved.service.js';
-import { delay } from '../../utilities/delay.utility.js';
-import { fetchTransaction } from '../fetch-transaction.service.js';
+// import { PrismaClient, RefundRecord, RefundRecordStatus, TransactionRecord, TransactionType } from '@prisma/client';
+// import { HeliusEnhancedTransaction } from '../../models/dependencies/helius-enhanced-transaction.model.js';
+// import { RefundRecordService } from '../database/refund-record-service.database.service.js';
+// import { MerchantService } from '../database/merchant-service.database.service.js';
+// import { makeRefundSessionResolve } from '../shopify/refund-session-resolve.service.js';
+// import axios from 'axios';
+// import {
+//     verifyRefundRecordWithHeliusEnhancedTransaction,
+//     verifyRefundTransactionWithRefundRecord,
+// } from '../transaction-validation/validate-discovered-refund-transaction.service.js';
+// import * as web3 from '@solana/web3.js';
+// import { sendRefundResolveRetryMessage } from '../sqs/sqs-send-message.service.js';
+// import { validateRefundSessionResolved } from '../shopify/validate-refund-session-resolved.service.js';
+// import { delay } from '../../utilities/delay.utility.js';
+// import { fetchTransaction } from '../fetch-transaction.service.js';
 
-// I'm not sure I love adding prisma into this but it should work for how we're handling testing now
-export const processDiscoveredRefundTransaction = async (
-    transactionRecord: TransactionRecord,
-    transaction: HeliusEnhancedTransaction,
-    prisma: PrismaClient
-) => {
-    // we should probably do some validation here to make sure the transaction
-    // actually matches the refund record that the transaction is associated with
-    // for now i will ignore that, mocked the function for now
+// // I'm not sure I love adding prisma into this but it should work for how we're handling testing now
+// export const processDiscoveredRefundTransaction = async (
+//     refundRecord: RefundRecord,
+//     transaction: HeliusEnhancedTransaction,
+//     prisma: PrismaClient
+// ) => {
+//     // we should probably do some validation here to make sure the transaction
+//     // actually matches the refund record that the transaction is associated with
+//     // for now i will ignore that, mocked the function for now
 
-    const refundRecordService = new RefundRecordService(prisma);
-    const merchantService = new MerchantService(prisma);
+//     const refundRecordService = new RefundRecordService(prisma);
+//     const merchantService = new MerchantService(prisma);
 
-    // Verify the transaction is a refund
-    if (transactionRecord.type != TransactionType.refund) {
-        throw new Error('Transaction record is not a refund');
-    }
+//     const merchant = await merchantService.getMerchant({
+//         id: refundRecord.merchantId,
+//     });
 
-    // catching this error here and throwing will just give it back to /helius but then at least
-    // that consolidates weird errors for logging into one place
-    if (transactionRecord.refundRecordId == null) {
-        throw new Error('Payment record not found on transaction record.');
-    }
+//     if (merchant == null) {
+//         throw new Error('Merchant not found with merchant id.');
+//     }
 
-    const refundRecord = await refundRecordService.getRefundRecord({
-        id: transactionRecord.refundRecordId,
-    });
+//     if (merchant.accessToken == null) {
+//         throw new Error('Access token not found on merchant.');
+//     }
 
-    if (refundRecord == null) {
-        throw new Error('Refund record not found.');
-    }
+//     verifyRefundRecordWithHeliusEnhancedTransaction(refundRecord, transaction, true);
 
-    if (refundRecord.shopGid == null) {
-        throw new Error('Shop gid not found on refund record.');
-    }
+//     let rpcTransaction: web3.Transaction | null = null;
 
-    if (refundRecord.merchantId == null) {
-        throw new Error('Merchant ID not found on refund record.');
-    }
+//     while (rpcTransaction == null) {
+//         try {
+//             await delay(3000);
+//             rpcTransaction = await fetchTransaction(transaction.signature);
+//         } catch (error) {}
+//     }
 
-    const merchant = await merchantService.getMerchant({
-        id: refundRecord.merchantId,
-    });
+//     // Verify against the refund record, if we throw in here, we should catch outside of this for logging
+//     verifyRefundTransactionWithRefundRecord(refundRecord, rpcTransaction, true);
 
-    if (merchant == null) {
-        throw new Error('Merchant not found with merchant id.');
-    }
+//     // TODO: Try catch this and handle cases where database updates fail
+//     refundRecordService.updateRefundRecord(refundRecord, {
+//         status: RefundRecordStatus.paid,
+//         transactionSignature: transaction.signature,
+//     });
 
-    if (merchant.accessToken == null) {
-        throw new Error('Access token not found on merchant.');
-    }
+//     try {
+//         const refundSessionResolve = makeRefundSessionResolve(axios);
 
-    verifyRefundRecordWithHeliusEnhancedTransaction(refundRecord, transaction, true);
+//         const resolveRefundResponse = await refundSessionResolve(
+//             refundRecord.shopGid,
+//             merchant.shop,
+//             merchant.accessToken
+//         );
 
-    let rpcTransaction: web3.Transaction | null = null;
+//         validateRefundSessionResolved(resolveRefundResponse);
 
-    while (rpcTransaction == null) {
-        try {
-            await delay(3000);
-            rpcTransaction = await fetchTransaction(transactionRecord.signature);
-        } catch (error) {}
-    }
-
-    // Verify against the refund record, if we throw in here, we should catch outside of this for logging
-    verifyRefundTransactionWithRefundRecord(refundRecord, rpcTransaction, true);
-
-    // TODO: Try catch this and handle cases where database updates fail
-    refundRecordService.updateRefundRecord(refundRecord, {
-        status: RefundRecordStatus.paid,
-        transactionSignature: transactionRecord.signature,
-    });
-
-    try {
-        const refundSessionResolve = makeRefundSessionResolve(axios);
-
-        const resolveRefundResponse = await refundSessionResolve(
-            refundRecord.shopGid,
-            merchant.shop,
-            merchant.accessToken
-        );
-
-        validateRefundSessionResolved(resolveRefundResponse);
-
-        await refundRecordService.updateRefundRecord(refundRecord, {
-            status: RefundRecordStatus.completed,
-            transactionSignature: transactionRecord.signature,
-            completedAt: new Date(),
-        });
-    } catch (error) {
-        // TODO: Log the error with Sentry, generally could be a normal situation to arise but it's still good to try why it happened
-        try {
-            await sendRefundResolveRetryMessage(refundRecord.id);
-        } catch (err) {
-            // TODO: This would be an odd error to hit, sending messages to the queue shouldn't fail. It will be good to log this
-            // with sentry and figure out why it happened. Also good to figure out some kind of redundancy here. Also good to
-            // build in a way to manually intervene here if needed.
-        }
-    }
-};
+//         await refundRecordService.updateRefundRecord(refundRecord, {
+//             status: RefundRecordStatus.completed,
+//             transactionSignature: transaction.signature,
+//             completedAt: new Date(),
+//         });
+//     } catch (error) {
+//         // TODO: Log the error with Sentry, generally could be a normal situation to arise but it's still good to try why it happened
+//         try {
+//             await sendRefundResolveRetryMessage(refundRecord.id);
+//         } catch (err) {
+//             // TODO: This would be an odd error to hit, sending messages to the queue shouldn't fail. It will be good to log this
+//             // with sentry and figure out why it happened. Also good to figure out some kind of redundancy here. Also good to
+//             // build in a way to manually intervene here if needed.
+//         }
+//     }
+// };

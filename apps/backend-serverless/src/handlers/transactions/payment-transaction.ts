@@ -31,6 +31,9 @@ import { sendPaymentRejectRetryMessage } from '../../services/sqs/sqs-send-messa
 import { validatePaymentSessionRejected } from '../../services/shopify/validate-payment-session-rejected.service.js';
 import { PaymentSessionStateRejectedReason } from '../../models/shopify-graphql-responses/shared.model.js';
 import { uploadSingleUseKeypair } from '../../services/upload-single-use-keypair.service.js';
+import { WebsocketSessionService } from '../../services/database/websocket.database.service.js';
+import { WebSocketService } from '../../services/websocket/send-websocket-message.service.js';
+import { MissingEnvError } from '../../errors/missing-env.error.js';
 
 const prisma = new PrismaClient();
 
@@ -49,14 +52,7 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
         const transactionRecordService = new TransactionRecordService(prisma);
         const paymentRecordService = new PaymentRecordService(prisma);
         const merchantService = new MerchantService(prisma);
-
-        const TRM_API_KEY = process.env.TRM_API_KEY;
-
-        if (TRM_API_KEY == null) {
-            return errorResponse(ErrorType.internalServerError, ErrorMessage.missingEnv);
-        }
-
-        const trmService = new TrmService(TRM_API_KEY);
+        const websocketSessionService = new WebsocketSessionService(prisma);
 
         if (event.body == null) {
             return errorResponse(ErrorType.badRequest, ErrorMessage.missingBody);
@@ -81,13 +77,6 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
 
         let gasKeypair: web3.Keypair;
 
-        try {
-            gasKeypair = await fetchGasKeypair();
-        } catch (error) {
-            console.log('error fetching gas keypair', error, error.message);
-            return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
-        }
-
         let paymentRecord: PaymentRecord | null;
 
         try {
@@ -107,6 +96,29 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
         if (paymentRecord.shopGid == null) {
             console.log('shop gid is null');
             return errorResponse(ErrorType.conflict, ErrorMessage.incompatibleDatabaseRecords);
+        }
+
+        const websocketUrl = process.env.WEBSOCKET_URL;
+
+        if (websocketUrl == null) {
+            throw new MissingEnvError('websocket url');
+        }
+
+        const websocketService = new WebSocketService(
+            websocketUrl,
+            {
+                paymentRecordId: paymentRecord.id,
+            },
+            websocketSessionService
+        );
+
+        await websocketService.sendTransacationRequestStartedMessage();
+
+        try {
+            gasKeypair = await fetchGasKeypair();
+        } catch (error) {
+            console.log('error fetching gas keypair', error, error.message);
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
         }
 
         let merchant: Merchant | null;
@@ -155,9 +167,10 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
             return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
         }
 
-        // We don't need to check with TRM for test transactions
+        // TODO: Clean this up
         if (paymentRecord.test == false) {
-            // TODO: Clean this up
+            const trmService = new TrmService();
+
             try {
                 await trmService.screenAddress(account);
             } catch (error) {
@@ -202,6 +215,14 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
                     }
                 }
 
+                await websocketService.sendErrorDetailsMessage({
+                    errorTitle: 'Could not process payment.',
+                    errorDetail:
+                        'It looks like your wallet has been flagged for suspicious activity. We are not able to process your payment at this time. Please go back and try another method.',
+                    errorRedirect: paymentRecord.redirectUrl ?? paymentRecord.cancelURL,
+                });
+
+                // TODO: Better error response
                 return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
             }
         }
@@ -217,7 +238,7 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
         transaction.partialSign(singleUseKeypair);
 
         // TODO: Idk why this is commented out but we should remove it soon, i think it was a local thing
-        // TODO: DO NOT ACCEPT THIS PR IF THIS IS COMMENTED OUT
+        // TODO: FIX THIS
         // try {
         //     verifyPaymentTransactionWithPaymentRecord(paymentRecord, transaction, true);
         // } catch (error) {
@@ -234,6 +255,8 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
         const signatureBuffer = transactionSignature;
 
         const signatureString = encodeBufferToBase58(signatureBuffer);
+
+        await websocketService.sendTransactionDeliveredMessage();
 
         try {
             await transactionRecordService.createTransactionRecord(
@@ -272,6 +295,7 @@ export const paymentMetadata = async (event: APIGatewayProxyEvent): Promise<APIG
         statusCode: 200,
         body: JSON.stringify({
             label: 'Solana Payment App',
+            icon: 'https://s2.coinmarketcap.com/static/img/coins/200x200/5426.png',
         }),
     };
 };

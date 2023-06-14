@@ -1,12 +1,12 @@
-import { format } from 'date-fns';
-import { twMerge } from 'tailwind-merge';
-
 import { PaginatedTable } from '@/components/PaginatedTable';
 import * as RE from '@/lib/Result';
 import { formatPrice } from '@/lib/formatPrice';
 import { useMerchantStore } from '@/stores/merchantStore';
 import { RefundStatus, useClosedRefundStore } from '@/stores/refundStore';
-import { useEffect, useState } from 'react';
+import { format } from 'date-fns';
+import { useEffect, useRef, useState } from 'react';
+import { MdSyncProblem } from 'react-icons/md';
+import { twMerge } from 'tailwind-merge';
 
 interface Props {
     className?: string;
@@ -19,6 +19,24 @@ export function ClosedRefunds(props: Props) {
     const merchantInfo = useMerchantStore(state => state.merchantInfo);
     const closedRefunds = useClosedRefundStore(state => state.closedRefunds);
     const getClosedRefunds = useClosedRefundStore(state => state.getClosedRefunds);
+
+    const pageRef = useRef(page);
+
+    useEffect(() => {
+        pageRef.current = page;
+    }, [page]);
+
+    useEffect(() => {
+        getClosedRefunds(page);
+
+        const intervalId = setInterval(() => {
+            getClosedRefunds(pageRef.current);
+        }, 5000);
+
+        return () => {
+            clearInterval(intervalId);
+        };
+    }, []);
 
     useEffect(() => {
         if (RE.isOk(closedRefunds)) {
@@ -34,6 +52,17 @@ export function ClosedRefunds(props: Props) {
                         <h1 className="text-2xl font-semibold">This Merchant does not exist</h1>
                         <p className="text-lg  mt-2">Please Log in with a different Merchant account</p>
                     </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (RE.isFailed(closedRefunds)) {
+        return (
+            <div className={props.className}>
+                <div className="flex flex-col justify-center h-full text-red-700 items-center space-y-4">
+                    <MdSyncProblem size={36} />
+                    <p>We're having trouble loading your closed refunds data</p>
                 </div>
             </div>
         );
