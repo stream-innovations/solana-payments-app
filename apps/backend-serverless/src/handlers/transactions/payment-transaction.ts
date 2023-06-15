@@ -34,6 +34,7 @@ import { uploadSingleUseKeypair } from '../../services/upload-single-use-keypair
 import { WebsocketSessionService } from '../../services/database/websocket.database.service.js';
 import { WebSocketService } from '../../services/websocket/send-websocket-message.service.js';
 import { MissingEnvError } from '../../errors/missing-env.error.js';
+import { verifyTransactionWithRecord } from '../../services/transaction-validation/validate-discovered-payment-transaction.service.js';
 
 const prisma = new PrismaClient();
 
@@ -118,6 +119,7 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
             gasKeypair = await fetchGasKeypair();
         } catch (error) {
             console.log('error fetching gas keypair', error, error.message);
+            await websocketService.sendTransactionRequestFailedMessage();
             return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
         }
 
@@ -129,17 +131,20 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
             });
         } catch (error) {
             console.log('error fetching merchant');
+            await websocketService.sendTransactionRequestFailedMessage();
             return errorResponse(ErrorType.internalServerError, ErrorMessage.databaseAccessError);
         }
 
         if (merchant == null) {
             // Not sure if this should be 500 or 404, will do 404 for now
             console.log('merchant is null');
+            await websocketService.sendTransactionRequestFailedMessage();
             return errorResponse(ErrorType.notFound, ErrorMessage.unknownMerchant);
         }
 
         if (merchant.accessToken == null) {
             console.log('merchant access token is null');
+            await websocketService.sendTransactionRequestFailedMessage();
             return errorResponse(ErrorType.conflict, ErrorMessage.incompatibleDatabaseRecords);
         }
 
@@ -164,6 +169,7 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
             );
         } catch (error) {
             console.log('error fetching payment transaction', error.message);
+            await websocketService.sendTransactionRequestFailedMessage();
             return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
         }
 
@@ -231,24 +237,24 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
             transaction = encodeTransaction(paymentTransaction.transaction);
         } catch (error) {
             console.log('error encoding transaction');
+            await websocketService.sendTransactionRequestFailedMessage();
             return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
         }
 
         transaction.partialSign(gasKeypair);
         transaction.partialSign(singleUseKeypair);
 
-        // TODO: Idk why this is commented out but we should remove it soon, i think it was a local thing
-        // TODO: FIX THIS
-        // try {
-        //     verifyPaymentTransactionWithPaymentRecord(paymentRecord, transaction, true);
-        // } catch (error) {
-        //     return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
-        // }
+        try {
+            verifyTransactionWithRecord(paymentRecord, transaction, true);
+        } catch (error) {
+            return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
+        }
 
         const transactionSignature = transaction.signature;
 
         if (transactionSignature == null) {
             console.log('transaction signature is null');
+            await websocketService.sendTransactionRequestFailedMessage();
             return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
         }
 
@@ -267,6 +273,7 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
             );
         } catch (error) {
             console.log('error creating transaction record');
+            await websocketService.sendTransactionRequestFailedMessage();
             return errorResponse(ErrorType.internalServerError, ErrorMessage.internalServerError);
         }
 
