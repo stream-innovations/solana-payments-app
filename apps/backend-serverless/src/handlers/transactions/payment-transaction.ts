@@ -32,7 +32,10 @@ import {
 import axios from 'axios';
 import { RiskyWalletError } from '../../errors/risky-wallet.error.js';
 import { makePaymentSessionReject } from '../../services/shopify/payment-session-reject.service.js';
-import { sendPaymentRejectRetryMessage } from '../../services/sqs/sqs-send-message.service.js';
+import {
+    sendPaymentRejectRetryMessage,
+    sendSolanaPayInfoMessage,
+} from '../../services/sqs/sqs-send-message.service.js';
 import { validatePaymentSessionRejected } from '../../services/shopify/validate-payment-session-rejected.service.js';
 import { PaymentSessionStateRejectedReason } from '../../models/shopify-graphql-responses/shared.model.js';
 import { uploadSingleUseKeypair } from '../../services/upload-single-use-keypair.service.js';
@@ -115,6 +118,8 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
 
         await websocketService.sendTransacationRequestStartedMessage();
 
+        await sendSolanaPayInfoMessage(account, paymentRecord.id);
+
         try {
             gasKeypair = await fetchGasKeypair();
         } catch (error) {
@@ -174,8 +179,7 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
             try {
                 await trmService.screenAddress(account);
             } catch (error) {
-                let rejectionReason: PaymentSessionStateRejectedReason =
-                    PaymentSessionStateRejectedReason.processingError;
+                let rejectionReason = PaymentSessionStateRejectedReason.processingError;
 
                 if (error instanceof RiskyWalletError) {
                     rejectionReason = PaymentSessionStateRejectedReason.risky;
