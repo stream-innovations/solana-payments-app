@@ -46,10 +46,11 @@ function generateMerchantRecords(count = 1): any[] {
                 accessToken: `access-token-${i}`,
                 scopes: 'write_payment_gateways,write_payment_sessions',
                 lastNonce: `nonce-${i}`,
-                paymentAddress: 'JAiArByfpjM3CKYms47FGNEqxuwDpJ93vDj9wGmQenJr',
+                walletAddress: 'JAiArByfpjM3CKYms47FGNEqxuwDpJ93vDj9wGmQenJr',
+                tokenAddress: null,
                 kybInquiry: `inq_${i}`,
                 kybState: 'finished',
-                acceptedTermsAndConditions: false,
+                acceptedTermsAndConditions: true,
                 dismissCompleted: false,
                 active: true,
             };
@@ -61,7 +62,8 @@ function generateMerchantRecords(count = 1): any[] {
                 accessToken: `access-token-${i}`,
                 scopes: 'write_payment_gateways,write_payment_sessions',
                 lastNonce: `nonce-${i}`,
-                paymentAddress: 'JAiArByfpjM3CKYms47FGNEqxuwDpJ93vDj9wGmQenJr',
+                walletAddress: 'JAiArByfpjM3CKYms47FGNEqxuwDpJ93vDj9wGmQenJr',
+                tokenAddress: null,
                 kybInquiry: `inq_${i}`,
                 kybState: 'finished',
                 acceptedTermsAndConditions: false,
@@ -95,6 +97,7 @@ function generatePaymentRecords(merchant = 1, count = 1): any[] {
                 usdcAmount: j + 1,
                 cancelURL: `https://store${j}.myshopify.com/checkouts/c/randomId_${j}/processing`,
                 merchantId: `merchant-${i}`,
+                transactionSignature: `317CdVpw26TCBpgKdaK8siAG3iMHatFPxph47GQieaZYojo9Q4qNG8vJ3r2EsHUWGEieEgzpFYBPmrqhiHh6sjLt`,
                 requestedAt: date.toISOString(), // setting requestedAt to the generated date
                 completedAt: null,
             };
@@ -114,11 +117,12 @@ function generatePaymentRecords(merchant = 1, count = 1): any[] {
                 shopGid: `gid://shopify/PaymentSession/r_2${j}_shopid`,
                 shopGroup: `shop_group_2${j}`,
                 test: 1,
-                amount: i + 1,
+                amount: j + 1,
                 currency: 'USD',
-                usdcAmount: i + 1,
+                usdcAmount: j + 1,
                 cancelURL: `https://store${j}.myshopify.com/checkouts/c/randomId_${j}/processing`,
                 merchantId: `merchant-${i}`,
+                transactionSignature: `317CdVpw26TCBpgKdaK8siAG3iMHatFPxph47GQieaZYojo9Q4qNG8vJ3r2EsHUWGEieEgzpFYBPmrqhiHh6sjLt`,
                 requestedAt: requestedAt.toISOString(),
                 completedAt: completedAt.toISOString(),
             };
@@ -162,9 +166,9 @@ function generateRefundRecords(merchant = 1, count = 1): any[] {
             const record = {
                 id: `refund-2${j}`,
                 status: 'completed',
-                amount: i,
+                amount: j,
                 currency: 'USD',
-                usdcAmount: i,
+                usdcAmount: j,
                 shopId: `r_2${j}_shopid`,
                 shopGid: `gid://shopify/PaymentSession/r_2${j}_shopid`,
                 shopPaymentId: `r_2${j}_shopid`,
@@ -205,7 +209,7 @@ async function insertJsonData() {
     });
 }
 
-async function insertGeneratedData() {
+async function insertGeneratedData(count: number) {
     const merchantInfo = await prisma.merchant.createMany({
         data: generateMerchantRecords().map(merchant => ({
             ...merchant,
@@ -213,7 +217,7 @@ async function insertGeneratedData() {
     });
 
     const paymentRecords = await prisma.paymentRecord.createMany({
-        data: generatePaymentRecords(1, 30).map(record => ({
+        data: generatePaymentRecords(1, count).map(record => ({
             ...record,
             status: stringToPaymentRecordStatus(record.status),
             test: Boolean(record.test),
@@ -221,7 +225,7 @@ async function insertGeneratedData() {
     });
 
     const refundRecords = await prisma.refundRecord.createMany({
-        data: generateRefundRecords(1, 30).map(record => ({
+        data: generateRefundRecords(1, count).map(record => ({
             ...record,
             status: stringToRefundRecordStatus(record.status),
             test: Boolean(record.test),
@@ -238,7 +242,7 @@ async function main() {
     // await prisma.$executeRaw`DROP TABLE PaymentRecord `;
     // await prisma.$executeRaw`DROP TABLE RefundRecord `;
 
-    await insertGeneratedData();
+    await insertGeneratedData(10);
 }
 
 main()

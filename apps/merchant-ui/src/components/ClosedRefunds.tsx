@@ -81,13 +81,27 @@ export function ClosedRefunds(props: Props) {
         );
     }
 
+    function refundIsCompleted(status: RefundStatus) {
+        if (status === RefundStatus.Completed) {
+            return true;
+        }
+
+        if (status === RefundStatus.Paid) {
+            return true;
+        }
+
+        if (status === RefundStatus.Rejected) {
+            return false;
+        }
+    }
+
     return (
         <PaginatedTable
             className={twMerge(props.className, 'mt-8')}
             columns={['orderId', 'requestedAt', 'requestedRefundAmount', 'purchaseAmount', 'status']}
             curPage={RE.map(closedRefunds, ({ refunds }) => refunds)}
             headers={{
-                orderId: 'Shopify Order ID',
+                orderId: 'Shopify Order #',
                 requestedAt: 'Requested On',
                 requestedRefundAmount: 'Requested Refund',
                 purchaseAmount: 'Purchase Amount',
@@ -102,47 +116,23 @@ export function ClosedRefunds(props: Props) {
             }}
         >
             {{
-                orderId: orderId => (
-                    <div
-                        className={twMerge(
-                            'border-b',
-                            'border-gray-200',
-                            'flex',
-                            'font-semibold',
-                            'h-20',
-                            'items-center',
-                            'text-black',
-                            'text-overflow'
-                        )}
-                        key={orderId}
-                    >
-                        {orderId.length > 6 ? orderId.substring(0, 6) + '...' : orderId}
-                    </div>
-                ),
+                orderId: id => <div className="font-semibold text-sm text-black">{id}</div>,
                 requestedAt: requestedAt => (
-                    <div
-                        className={twMerge('border-b', 'border-gray-200', 'flex', 'h-20', 'items-center', 'text-black')}
-                    >
-                        {format(requestedAt, 'MMM d, h:mmaa')}
-                    </div>
+                    <div className="text-sm text-slate-600 pr-11">{format(requestedAt, 'MMM d, h:mmaa')}</div>
                 ),
                 requestedRefundAmount: requestedRefundAmount => (
-                    <div
-                        className={twMerge('border-b', 'border-gray-200', 'flex', 'h-20', 'items-center', 'text-black')}
-                    >
-                        {formatPrice(Math.abs(requestedRefundAmount))}
+                    <div className={twMerge('text-sm', 'font-medium', 'pr-14', 'text-black')}>
+                        ${formatPrice(Math.abs(requestedRefundAmount))}
                     </div>
                 ),
                 purchaseAmount: purchaseAmount => (
-                    <div
-                        className={twMerge('border-b', 'border-gray-200', 'flex', 'h-20', 'items-center', 'text-black')}
-                    >
-                        {formatPrice(Math.abs(purchaseAmount))}
+                    <div className={twMerge('text-sm', 'font-medium', 'pr-14', 'text-black')}>
+                        ${formatPrice(Math.abs(purchaseAmount))}
                     </div>
                 ),
                 status: (_, refund) => (
                     <div className={twMerge('border-b', 'border-gray-200', 'flex', 'h-20', 'items-center')}>
-                        {refund.status === RefundStatus.Paid && (
+                        {refundIsCompleted(refund.status) ? (
                             <div
                                 className={twMerge(
                                     'border',
@@ -158,8 +148,7 @@ export function ClosedRefunds(props: Props) {
                             >
                                 Refunded
                             </div>
-                        )}
-                        {refund.status === RefundStatus.Rejected && (
+                        ) : (
                             <div
                                 className={twMerge(
                                     'border',

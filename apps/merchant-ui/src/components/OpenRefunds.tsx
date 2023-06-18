@@ -1,4 +1,5 @@
 import { PaginatedTable } from '@/components/PaginatedTable';
+import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
 import * as RE from '@/lib/Result';
 import { abbreviateAddress } from '@/lib/abbreviateAddress';
@@ -37,7 +38,7 @@ export function OpenRefunds(props: Props) {
     const [denyPending, setDenyPending] = useState(false);
     const [openApprove, setOpenApprove] = useState<string | null>(null);
     const [denyApprove, setDenyApprove] = useState<string | null>(null);
-    const [refundIdToProcess, setRefundIdToProcess] = useState<string | null>(null);
+    const [rejectReason, setRejectReason] = useState<string>('');
 
     const [walletModalActive, setWalletModalActive] = useState(false);
 
@@ -91,6 +92,7 @@ export function OpenRefunds(props: Props) {
                 body: JSON.stringify({
                     account: publicKey.toBase58(),
                 }),
+                credentials: 'include',
             });
             const data = await response.json();
             if (!response.ok) {
@@ -137,17 +139,20 @@ export function OpenRefunds(props: Props) {
         }
     }
 
-    async function rejectRefund(refundId: string, refundReason: string) {
+    async function rejectRefund(refundId: string) {
         setDenyPending(true);
         denyPendingRef.current = true;
+
         try {
-            const response = await fetch(
-                `${API_ENDPOINTS.rejectRefund}?refundId=${refundId}&merchantReason=test_reason`,
-                {
-                    method: 'POST',
-                    headers: headers,
-                }
-            );
+            const rejectParams = {
+                refundId: refundId,
+                merchantReason: rejectReason,
+            };
+            const response = await fetch(`${API_ENDPOINTS.rejectRefund}?${new URLSearchParams(rejectParams)}`, {
+                method: 'POST',
+                headers: headers,
+                credentials: 'include',
+            });
 
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
@@ -159,9 +164,11 @@ export function OpenRefunds(props: Props) {
                 });
                 const statusData = await statusResponse.json();
                 if (!statusResponse.ok) {
+                    console.log('not okay');
                     throw new Error(`HTTP error! status: ${statusResponse.status}`);
                 }
                 if (statusData.refundStatus.status !== RefundStatus.Pending) {
+                    console.log('pending');
                     break;
                 }
             }
@@ -169,6 +176,7 @@ export function OpenRefunds(props: Props) {
                 title: 'Successfully Rejected Refund!',
                 variant: 'constructive',
             });
+            setRejectReason('');
         } catch (error) {
             if (error instanceof Error) {
                 toast({
@@ -232,7 +240,7 @@ export function OpenRefunds(props: Props) {
             columns={['orderId', 'requestedAt', 'requestedRefundAmount', 'purchaseAmount', 'status']}
             curPage={RE.map(openRefunds, ({ refunds }) => refunds)}
             headers={{
-                orderId: 'Shopify Order ID',
+                orderId: 'Shopify Order #',
                 requestedAt: 'Requested On',
                 requestedRefundAmount: 'Requested Refund',
                 purchaseAmount: 'Purchase Amount',
@@ -247,42 +255,18 @@ export function OpenRefunds(props: Props) {
             }}
         >
             {{
-                orderId: orderId => (
-                    <div
-                        className={twMerge(
-                            'border-b',
-                            'border-gray-200',
-                            'flex',
-                            'font-semibold',
-                            'h-20',
-                            'items-center',
-                            'text-black',
-                            'text-overflow'
-                        )}
-                        key={orderId}
-                    >
-                        {orderId.length > 6 ? orderId.substring(0, 6) + '...' : orderId}
-                    </div>
-                ),
+                orderId: id => <div className="font-semibold text-sm text-black">{id}</div>,
                 requestedAt: requestedAt => (
-                    <div
-                        className={twMerge('border-b', 'border-gray-200', 'flex', 'h-20', 'items-center', 'text-black')}
-                    >
-                        {format(requestedAt, 'MMM d, h:mmaa')}
-                    </div>
+                    <div className="text-sm text-slate-600 pr-11">{format(requestedAt, 'MMM d, h:mmaa')}</div>
                 ),
                 requestedRefundAmount: requestedRefundAmount => (
-                    <div
-                        className={twMerge('border-b', 'border-gray-200', 'flex', 'h-20', 'items-center', 'text-black')}
-                    >
-                        {formatPrice(Math.abs(requestedRefundAmount))}
+                    <div className={twMerge('text-sm', 'font-medium', 'pr-14', 'text-black')}>
+                        ${formatPrice(Math.abs(requestedRefundAmount))}
                     </div>
                 ),
                 purchaseAmount: purchaseAmount => (
-                    <div
-                        className={twMerge('border-b', 'border-gray-200', 'flex', 'h-20', 'items-center', 'text-black')}
-                    >
-                        {formatPrice(Math.abs(purchaseAmount))}
+                    <div className={twMerge('text-sm', 'font-medium', 'pr-14', 'text-black')}>
+                        ${formatPrice(Math.abs(purchaseAmount))}
                     </div>
                 ),
                 status: (_, refund) => (
@@ -313,15 +297,24 @@ export function OpenRefunds(props: Props) {
                                             setDenyPending(false);
                                         }}
                                     >
-                                        <div className="px-6 pt-6 pb-9">
+                                        <div className="px-6 pt-6 pb-6">
                                             <div className="flex items-start justify-between">
-                                                <div>
+                                                <div className="flex flex-col space-y-2">
                                                     <div className="font-semibold text-slate-900 text-2xl">
                                                         Deny Refund
                                                     </div>
-                                                    <div className="mt-2 text-slate-800">
+                                                    <div className="text-slate-800">
                                                         Are you sure? You can’t undo this action afterwards.
                                                     </div>
+
+                                                    <Input
+                                                        type="text"
+                                                        placeholder="Enter Rejection Reason"
+                                                        value={rejectReason}
+                                                        onChange={e => {
+                                                            setRejectReason(e.target.value);
+                                                        }}
+                                                    />
                                                 </div>
                                                 <Dialog.Close
                                                     className={twMerge(
@@ -340,8 +333,9 @@ export function OpenRefunds(props: Props) {
                                         </div>
                                         <div className="bg-slate-50 p-4 flex justify-end">
                                             <Button.Primary
-                                                onClick={() => rejectRefund(refund.orderId, 'test reason')}
+                                                onClick={() => rejectRefund(refund.orderId)}
                                                 pending={denyPending}
+                                                disabled={rejectReason === ''}
                                             >
                                                 Deny Refund
                                             </Button.Primary>
