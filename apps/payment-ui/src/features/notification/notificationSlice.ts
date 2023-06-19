@@ -32,6 +32,7 @@ export enum Notification {
     duplicatePayment = 'It looks like you already paid. Please check your wallet.',
     insufficentFunds = "You don't have enough funds for this transaction.",
     simulatingIssue = "There's an issue with your transaction. Please try again.",
+    shopifyRetry = "We're pretty sure you paid. We even told Shopify. They were all like, yo bro not so fast. We're gonna try again in a second. You'll get an email but just hand tight.",
 }
 
 interface NotificationState {
@@ -51,14 +52,22 @@ const notificationSlice = createSlice({
         setNotification: (state, action: PayloadAction<{ notification: Notification; type: NotificationType }>) => {
             switch (action.payload.type) {
                 case NotificationType.connectWallet:
-                    state.connectWalletNotification = action.payload.notification;
+                    if (state.connectWalletNotification == Notification.none) {
+                        state.connectWalletNotification = action.payload.notification;
+                    }
                     break;
                 case NotificationType.solanaPay:
-                    state.solanaPayNotification = action.payload.notification;
+                    if (state.solanaPayNotification == Notification.none) {
+                        state.solanaPayNotification = action.payload.notification;
+                    }
                     break;
                 case NotificationType.both:
-                    state.connectWalletNotification = action.payload.notification;
-                    state.solanaPayNotification = action.payload.notification;
+                    if (state.connectWalletNotification == Notification.none) {
+                        state.connectWalletNotification = action.payload.notification;
+                    }
+                    if (state.solanaPayNotification == Notification.none) {
+                        state.solanaPayNotification = action.payload.notification;
+                    }
                     break;
             }
         },
@@ -80,3 +89,9 @@ export const getIsConnectWalletNotification = (state: RootState): boolean =>
 export const getSolanaPayNotification = (state: RootState): Notification => state.notification.solanaPayNotification;
 export const getConnectWalletNotification = (state: RootState): Notification =>
     state.notification.connectWalletNotification;
+export const getIsEitherNotification = (state: RootState): boolean => {
+    return (
+        state.notification.connectWalletNotification != Notification.none ||
+        state.notification.solanaPayNotification != Notification.none
+    );
+};
