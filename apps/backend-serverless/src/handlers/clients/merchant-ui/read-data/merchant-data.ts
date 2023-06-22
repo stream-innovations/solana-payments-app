@@ -2,6 +2,7 @@ import { KybState, Merchant, PrismaClient } from '@prisma/client';
 import * as Sentry from '@sentry/serverless';
 import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import axios from 'axios';
+import { MissingExpectedDatabaseRecordError } from '../../../../errors/missing-expected-database-record.error.js';
 import { MerchantAuthToken } from '../../../../models/clients/merchant-ui/merchant-auth-token.model.js';
 import { contingentlyHandleAppConfigure } from '../../../../services/business-logic/contigently-handle-app-configure.service.js';
 import { MerchantService } from '../../../../services/database/merchant-service.database.service.js';
@@ -16,7 +17,6 @@ import {
 import { withAuth } from '../../../../utilities/clients/merchant-ui/token-authenticate.utility.js';
 import { syncKybState } from '../../../../utilities/persona/sync-kyb-status.js';
 import { createErrorResponse } from '../../../../utilities/responses/error-response.utility.js';
-import { MissingExpectedDatabaseRecordError } from '../../../../errors/missing-expected-database-record.error.js';
 
 const prisma = new PrismaClient();
 
@@ -53,17 +53,19 @@ export const merchantData = Sentry.AWSLambda.wrapHandler(
         if (merchant.kybInquiry && merchant.kybState !== KybState.finished && merchant.kybState !== KybState.failed) {
             try {
                 merchant = await syncKybState(merchant, prisma);
-            } catch (error) {
-                Sentry.captureException(error);
+            } catch {
+                // it's unlikely that this will throw but we should catch and record all errors underneath this
+                // we don't need to error out here because a new merchant shouldn't have a kyb inquirey but if they do
+                // we don't wana disrupt the flow, they'll just get blocked elsewhere
             }
+        }
 
-            if (merchant.kybState === KybState.finished) {
-                try {
-                    merchant = await contingentlyHandleAppConfigure(merchant, axios, prisma);
-                } catch (error) {
-                    // TODO: This would be worse, if it throws trying to do app configure, figure out what has to happen here
-                    Sentry.captureException(error);
-                }
+        if (merchant.kybState === KybState.finished) {
+            try {
+                merchant = await contingentlyHandleAppConfigure(merchant, axios, prisma);
+            } catch {
+                // It's possible for this to throw but we should capture and log alll errors underneath this
+                // It's better if we just return the merchant data here and handle the issue elsewhere
             }
         }
 
@@ -96,6 +98,6 @@ export const merchantData = Sentry.AWSLambda.wrapHandler(
         };
     },
     {
-        rethrowAfterCapture: true,
+        rethrowAfterCapture: false,
     }
 );

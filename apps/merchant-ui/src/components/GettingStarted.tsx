@@ -1,6 +1,7 @@
 import { LoadingDots } from '@/components/LoadingDots';
 import { isOk } from '@/lib/Result';
 import { useMerchantStore } from '@/stores/merchantStore';
+import Router from 'next/router';
 import { DefaultLayoutContent } from './DefaultLayoutContent';
 import { DefaultLayoutScreenTitle } from './DefaultLayoutScreenTitle';
 import { FinishAccountSetupPrompt } from './FinishAccountSetupPrompt';
@@ -20,10 +21,14 @@ export function GettingStarted(props: Props) {
         );
     }
 
+    if (isOk(merchantInfo) && merchantInfo.data.completed) {
+        Router.push('/merchant');
+    }
+
     return (
         <DefaultLayoutContent className={props.className}>
             <DefaultLayoutScreenTitle>Welcome, {merchantInfo.data.name}!</DefaultLayoutScreenTitle>
-            <div className="mt-4 text-black text-lg">Accepting payments on Solana is just three easy steps away.</div>
+            <div className="mt-4 text-black text-lg">Accepting payments on Solana is just four easy steps away.</div>
             <FinishAccountSetupPrompt className="mt-14 rounded-xl" />
         </DefaultLayoutContent>
     );

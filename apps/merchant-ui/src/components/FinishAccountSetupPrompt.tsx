@@ -1,13 +1,14 @@
-import AcceptTOS from '@/AcceptTOS';
+import { AcceptPolicy } from '@/AcceptModals';
 import { LoadingDots } from '@/components/LoadingDots';
 import * as RE from '@/lib/Result';
 import { isOk } from '@/lib/Result';
-import { useMerchantStore } from '@/stores/merchantStore';
+import { privacyPolicySections, tosSections } from '@/lib/policies';
+import { updateMerchant, useMerchantStore } from '@/stores/merchantStore';
 import Policy from '@carbon/icons-react/lib/Policy';
+import RuleDataQuality from '@carbon/icons-react/lib/RuleDataQuality';
 import Store from '@carbon/icons-react/lib/Store';
 import Wallet from '@carbon/icons-react/lib/Wallet';
-import Link from 'next/link';
-import { useRouter } from 'next/router';
+import Router, { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import { twMerge } from 'tailwind-merge';
 import { Primary } from './Button';
@@ -17,19 +18,23 @@ import { KYBButton } from './KYBButton';
 export enum RemainingSetupItem {
     VerifyBusiness,
     AcceptTerms,
+    AcceptPrivacy,
     AddWallet,
 }
 
 const STEPS = [
     RemainingSetupItem.VerifyBusiness,
     RemainingSetupItem.AddWallet,
+    RemainingSetupItem.AcceptPrivacy,
     RemainingSetupItem.AcceptTerms,
 ] as const;
 
 function getItemTitle(item: RemainingSetupItem) {
     switch (item) {
         case RemainingSetupItem.AcceptTerms:
-            return 'Accept Terms of Service and Privacy Policy';
+            return 'Accept Terms of Service';
+        case RemainingSetupItem.AcceptPrivacy:
+            return 'Accept Privacy Policy';
         case RemainingSetupItem.AddWallet:
             return 'Add a wallet';
         case RemainingSetupItem.VerifyBusiness:
@@ -41,6 +46,8 @@ function getItemImage(item: RemainingSetupItem) {
     switch (item) {
         case RemainingSetupItem.AcceptTerms:
             return <Policy />;
+        case RemainingSetupItem.AcceptPrivacy:
+            return <RuleDataQuality />;
         case RemainingSetupItem.AddWallet:
             return <Wallet />;
         case RemainingSetupItem.VerifyBusiness:
@@ -61,6 +68,7 @@ export function FinishAccountSetupPrompt(props: Props) {
 
     const [remainingSetupItems, setRemainingSetupItems] = useState<RemainingSetupItem[]>([
         RemainingSetupItem.AcceptTerms,
+        RemainingSetupItem.AcceptPrivacy,
         RemainingSetupItem.AddWallet,
         RemainingSetupItem.VerifyBusiness,
     ]);
@@ -79,10 +87,11 @@ export function FinishAccountSetupPrompt(props: Props) {
         if (!isOk(merchantInfo)) {
             return false;
         }
-
         switch (step) {
             case RemainingSetupItem.AcceptTerms:
                 return merchantInfo.data.acceptedTermsAndConditions === true;
+            case RemainingSetupItem.AcceptPrivacy:
+                return merchantInfo.data.acceptedPrivacyPolicy === true;
             case RemainingSetupItem.AddWallet:
                 return merchantInfo.data.paymentAddress !== null;
             case RemainingSetupItem.VerifyBusiness:
@@ -99,27 +108,40 @@ export function FinishAccountSetupPrompt(props: Props) {
     }
 
     if (remainingSetupItems.length === 0) {
-        return (
-            <div
-                className={twMerge(
-                    'bg-slate-50',
-                    'py-5',
-                    'px-4',
-                    'text-center',
-                    'flex',
-                    'space-y-2',
-                    'flex-col',
-                    'items-center',
-                    props.className
-                )}
-            >
-                <div className="font-semibold text-black">🎉 Congrats, Solana Pay is now live!</div>
-                <div className="text-black">Your store now accepts Solana and USDC payments.</div>
-                <Link href="/payments">
-                    <Primary onClick={getMerchantInfo}>Go to Portal</Primary>
-                </Link>
-            </div>
-        );
+        if (merchantInfo.data.completed) {
+            Router.push('/merchant');
+        } else {
+            return (
+                <div
+                    className={twMerge(
+                        'bg-slate-50',
+                        'py-5',
+                        'px-4',
+                        'text-center',
+                        'flex',
+                        'space-y-2',
+                        'flex-col',
+                        'items-center',
+                        props.className
+                    )}
+                >
+                    <div className="font-semibold text-black">🎉 Congrats, Solana Pay is now live!</div>
+                    <div className="text-black">
+                        Your store now accepts Solana and USDC payments. Please enable payments in your Shopify settings
+                    </div>
+                    <a href={merchantInfo.data.completedRedirect}>
+                        <Primary
+                            onClick={() => {
+                                updateMerchant('dismissCompleted', 'true');
+                                getMerchantInfo();
+                            }}
+                        >
+                            Go Shopify Admin
+                        </Primary>
+                    </a>
+                </div>
+            );
+        }
     }
 
     return (
@@ -137,7 +159,21 @@ export function FinishAccountSetupPrompt(props: Props) {
                         step === RemainingSetupItem.VerifyBusiness
                             ? () => <KYBButton />
                             : step === RemainingSetupItem.AcceptTerms
-                            ? () => <AcceptTOS />
+                            ? () => (
+                                  <AcceptPolicy
+                                      title="TOS"
+                                      sections={tosSections}
+                                      updatePolicy={() => updateMerchant('acceptedTermsAndConditions', 'true')}
+                                  />
+                              )
+                            : step === RemainingSetupItem.AcceptPrivacy
+                            ? () => (
+                                  <AcceptPolicy
+                                      title="Privacy Policy"
+                                      sections={privacyPolicySections}
+                                      updatePolicy={() => updateMerchant('acceptedPrivacyPolicy', 'true')}
+                                  />
+                              )
                             : () => <Primary onClick={() => router.push('/getting-started/add-wallet')}>Start</Primary>
                     }
                     onStart={() => props.onBeginSetupItem?.(step)}

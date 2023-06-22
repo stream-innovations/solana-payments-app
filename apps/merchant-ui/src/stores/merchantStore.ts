@@ -7,10 +7,12 @@ interface MerchantInfo {
     name: string;
     paymentAddress: string;
     acceptedTermsAndConditions: boolean;
+    acceptedPrivacyPolicy: boolean;
     dismissCompleted: boolean;
     completed: boolean;
-    kybState?: 'pending' | 'failed' | 'finished';
+    kybState?: 'pending' | 'failed' | 'finished' | 'incomplete';
     kybInquiry?: string;
+    completedRedirect: string;
 }
 
 type MerchantStore = {
@@ -33,11 +35,13 @@ export const useMerchantStore = create<MerchantStore>(set => ({
                     shop: merchantJson.merchantData.shop,
                     name: merchantJson.merchantData.name,
                     paymentAddress: merchantJson.merchantData.paymentAddress,
-                    acceptedTermsAndConditions: merchantJson.merchantData.onboarding.acceptedTerms,
+                    acceptedTermsAndConditions: merchantJson.merchantData.onboarding.acceptedTermsAndConditions,
+                    acceptedPrivacyPolicy: merchantJson.merchantData.onboarding.acceptedPrivacyPolicy,
                     dismissCompleted: merchantJson.merchantData.onboarding.dismissCompleted,
                     completed: merchantJson.merchantData.onboarding.completed,
                     kybInquiry: merchantJson.merchantData.onboarding.kybInquiry,
                     kybState: merchantJson.merchantData.onboarding.kybState,
+                    completedRedirect: merchantJson.merchantData.onboarding.completedRedirect,
                 }),
             });
         } catch (error) {
@@ -46,61 +50,22 @@ export const useMerchantStore = create<MerchantStore>(set => ({
     },
 }));
 
-export async function updateMerchantAddress(walletAddress: string | null | undefined) {
-    if (!walletAddress) {
-        return;
-    }
-
+export async function updateMerchant(field: string, value: string) {
     const headers = {
         'Content-Type': 'application/json',
     };
 
+    let response;
+
     try {
-        const response = await fetch(API_ENDPOINTS.updateMerchant, {
+        response = await fetch(API_ENDPOINTS.updateMerchant, {
             method: 'PUT',
             headers,
-            body: JSON.stringify({
-                paymentAddress: walletAddress,
-            }),
+            body: JSON.stringify({ [field]: value }),
             credentials: 'include',
         });
     } catch (error) {
-        console.log('update merchant address error', error);
+        console.error('Failed to update merchant data', error);
     }
-}
-
-export async function updateMerchantTos() {
-    const headers = {
-        'Content-Type': 'application/json',
-    };
-
-    try {
-        const response = await fetch(API_ENDPOINTS.updateMerchant, {
-            method: 'PUT',
-            headers,
-            body: JSON.stringify({
-                acceptedTermsAndConditions: 'true',
-            }),
-            credentials: 'include',
-        });
-    } catch (error) {
-        console.log('update merchant tos error', error);
-    }
-}
-
-export async function updateMerchantKybInquiry(kybInquiry: string) {
-    const headers = {
-        'Content-Type': 'application/json',
-    };
-
-    try {
-        const response = await fetch(API_ENDPOINTS.updateMerchant, {
-            headers,
-            method: 'PUT',
-            body: JSON.stringify({ kybInquiry }),
-            credentials: 'include',
-        });
-    } catch (error) {
-        console.log('update merchant kyb inquiry error', error);
-    }
+    return response;
 }

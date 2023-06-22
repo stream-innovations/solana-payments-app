@@ -4,10 +4,17 @@ import { usePaymentStore } from '@/stores/paymentStore';
 import { useClosedRefundStore, useOpenRefundStore } from '@/stores/refundStore';
 import '@/styles/globals.css';
 import { Provider as TooltipProvider } from '@radix-ui/react-tooltip';
+import {
+    SolanaMobileWalletAdapter,
+    createDefaultAddressSelector,
+    createDefaultAuthorizationResultCache,
+    createDefaultWalletNotFoundHandler,
+} from '@solana-mobile/wallet-adapter-mobile';
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base';
 import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
 import '@solana/wallet-adapter-react-ui/styles.css';
+import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
 import { clusterApiUrl } from '@solana/web3.js';
 import type { AppProps } from 'next/app';
 import Head from 'next/head';
@@ -29,6 +36,7 @@ export default function App({ Component, pageProps }: AppProps) {
     return (
         <>
             <Head>
+                <title>Solana Pay</title>
                 <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <link rel="icon" href="/favicon.ico" />
             </Head>
@@ -48,7 +56,24 @@ const Context: FC<{ children: ReactNode }> = ({ children }) => {
     const endpoint = useMemo(() => clusterApiUrl(network), [network]);
     // const endpoint = useMemo(() => "http://localhost:8899");
 
-    const wallets = useMemo(() => [], []);
+    const wallets = useMemo(
+        () => [
+            new SolflareWalletAdapter(),
+            new PhantomWalletAdapter(),
+            new SolanaMobileWalletAdapter({
+                addressSelector: createDefaultAddressSelector(),
+                appIdentity: {
+                    name: 'Solana Pay Merchant Portal',
+                    uri: 'https://merchant.solanapay.com',
+                    icon: '/favicon.ico',
+                },
+                authorizationResultCache: createDefaultAuthorizationResultCache(),
+                cluster: WalletAdapterNetwork.Mainnet,
+                onWalletNotFound: createDefaultWalletNotFoundHandler(),
+            }),
+        ],
+        []
+    );
 
     return (
         <div>

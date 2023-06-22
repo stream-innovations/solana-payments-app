@@ -1,5 +1,5 @@
 import * as RE from '@/lib/Result';
-import { updateMerchantAddress, useMerchantStore } from '@/stores/merchantStore';
+import { updateMerchant, useMerchantStore } from '@/stores/merchantStore';
 import { PublicKey } from '@solana/web3.js';
 import { useEffect, useState } from 'react';
 import { twMerge } from 'tailwind-merge';
@@ -28,9 +28,10 @@ export function MerchantInfo(props: Props) {
         token: Token.USDC,
     });
     const [pending, setPending] = useState(false);
-    const [addressChanged, setAddressChanged] = useState(false);
+    const [addressChanged, setAddressChanged] = useState<boolean | string | null>(null);
     const merchantInfo = useMerchantStore(state => state.merchantInfo);
     const getMerchantInfo = useMerchantStore(state => state.getMerchantInfo);
+
     useEffect(() => {
         if (RE.isOk(merchantInfo)) {
             setFormState({
@@ -43,6 +44,7 @@ export function MerchantInfo(props: Props) {
             });
         }
     }, [merchantInfo]);
+
     function shouldDisable() {
         const { walletAddress } = formState;
         let paymentAddress = RE.isOk(merchantInfo) && merchantInfo.data.paymentAddress;
@@ -56,6 +58,24 @@ export function MerchantInfo(props: Props) {
         }
         return false;
     }
+
+    async function handleMerchantAddressClick() {
+        if (!formState.walletAddress) {
+            return;
+        }
+        setPending(true);
+
+        let response = await updateMerchant('paymentAddress', formState.walletAddress?.toString());
+        if (response && response.status === 200) {
+            setAddressChanged(true);
+        } else if (response && response.status !== 200) {
+            let d = await response.json();
+            setAddressChanged(d.error);
+        }
+        await getMerchantInfo();
+        setPending(false);
+    }
+
     if (RE.isFailed(merchantInfo)) {
         return (
             <DefaultLayoutContent className={props.className}>
@@ -68,20 +88,12 @@ export function MerchantInfo(props: Props) {
             </DefaultLayoutContent>
         );
     }
+
     return (
         <DefaultLayoutContent className={props.className}>
             <DefaultLayoutScreenTitle>Merchant Info</DefaultLayoutScreenTitle>
-            <div
-                className={twMerge(
-                    'gap-x-4',
-                    'grid-cols-[max-content,1fr]',
-                    'grid',
-                    'items-start',
-                    'max-w-4xl',
-                    'mt-9'
-                )}
-            >
-                <DefaultLayoutHeader className="mt-24 col-span-2">Information</DefaultLayoutHeader>
+            <div className={twMerge('gap-x-4', 'grid-cols-[max-content,1fr]', 'grid', 'items-start', 'max-w-4xl')}>
+                <DefaultLayoutHeader className="mt-16 col-span-2">Information</DefaultLayoutHeader>
                 <div>
                     <div className="font-medium text-black text-sm">Merchant Name</div>
                     <div className="text-sm text-neutral-600">Taken from your Shopify store</div>
@@ -90,7 +102,7 @@ export function MerchantInfo(props: Props) {
                     <Input disabled className="w-full max-w-lg" value={formState.name} />
                 </div>
                 <div className="mt-6 border-b border-gray-200 col-span-2" />
-                <DefaultLayoutHeader className="mt-24 col-span-2">Wallet and Settlement</DefaultLayoutHeader>
+                <DefaultLayoutHeader className="mt-16 col-span-2">Wallet and Settlement</DefaultLayoutHeader>
                 <div>
                     <div className="font-medium text-black text-sm">USDC Payments Address</div>
                     <div className="text-sm text-neutral-600">Receive all payments to this address</div>
@@ -132,17 +144,7 @@ export function MerchantInfo(props: Props) {
             </div>
             <footer className="flex items-center justify-end space-x-3 pt-4">
                 <Button.Secondary>Cancel</Button.Secondary>
-                <Button.Primary
-                    onClick={async () => {
-                        setPending(true);
-                        await updateMerchantAddress(formState.walletAddress?.toString());
-                        await getMerchantInfo();
-                        setAddressChanged(true);
-                        setPending(false);
-                    }}
-                    pending={pending}
-                    disabled={shouldDisable()}
-                >
+                <Button.Primary onClick={handleMerchantAddressClick} pending={pending} disabled={shouldDisable()}>
                     Save
                 </Button.Primary>
             </footer>
