@@ -62,7 +62,7 @@ export function ClosedRefunds(props: Props) {
             <div className={props.className}>
                 <div className="flex flex-col justify-center h-full text-red-700 items-center space-y-4">
                     <MdSyncProblem size={36} />
-                    <p>We're having trouble loading your closed refunds data</p>
+                    <p>We're having trouble loading your Closed refunds data</p>
                 </div>
             </div>
         );
@@ -143,7 +143,7 @@ export function ClosedRefunds(props: Props) {
                                     'text-slate-700',
                                     'text-sm',
                                     'font-medium',
-                                    'bg-slate-50'
+                                    'bg-slate-50',
                                 )}
                             >
                                 Refunded
@@ -159,7 +159,7 @@ export function ClosedRefunds(props: Props) {
                                     'text-red-700',
                                     'text-sm',
                                     'font-medium',
-                                    'bg-red-50'
+                                    'bg-red-50',
                                 )}
                             >
                                 Refund Denied

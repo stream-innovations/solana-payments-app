@@ -4,6 +4,10 @@ useDotenv: true
 provider:
   name: aws
   runtime: nodejs18.x
+  environment:
+    NODE_TLS_REJECT_UNAUTHORIZED: ${env:NODE_TLS_REJECT_UNAUTHORIZED}
+    MOCK_SHOPIFY_CLIENT_ID: ${env:SHOPIFY_CLIENT_ID}
+    MOCK_SHOPIFY_SECRET_KEY: ${env:SHOPIFY_SECRET_KEY}
 package:
   excludeDevDependencies: false
 functions:
@@ -53,4 +57,4 @@ custom:
   serverless-offline:
     httpPort: 4004
     lambdaPort: 4005
-    httpsProtocol: "dev-certs"
+    httpsProtocol: 'dev-certs'

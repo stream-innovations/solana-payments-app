@@ -1,5 +1,4 @@
-import { APIGatewayProxyResultV2, APIGatewayProxyEventV2 } from 'aws-lambda';
-import crypto from 'crypto-js';
+import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 
 export const paymentApp = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
     const body = JSON.parse(event.body!);
@@ -17,9 +16,10 @@ export const paymentApp = async (event: APIGatewayProxyEventV2): Promise<APIGate
         data = {
             paymentsAppConfigure: {
                 paymentsAppConfiguration: {
-                    externalHandle: 'mock-external-handle',
+                    externalHandle: 'merchant-0',
                     ready: true,
                 },
+                userErrors: [],
             },
         };
     } else if (paymentSessionResolve) {
@@ -33,7 +33,7 @@ export const paymentApp = async (event: APIGatewayProxyEventV2): Promise<APIGate
                     nextAction: {
                         action: 'REDIRECT',
                         context: {
-                            redirectUrl: 'https://www.shopify.com/',
+                            redirectUrl: 'https://localhost:4004/payment',
                         },
                     },
                 },

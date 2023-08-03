@@ -3,6 +3,7 @@
 
 generator client {
   provider      = "prisma-client-js"
+  output        = "../node_modules/.prisma/client"
   binaryTargets = ["native", "rhel-openssl-1.0.x"]
 }
 
@@ -45,6 +46,12 @@ enum KybState {
   finished
 }
 
+enum LoyaltyProgram {
+  none
+  points
+  tiers
+}
+
 model Merchant {
   id             String          @id // Internal ID
   shop           String          @unique
@@ -64,6 +71,17 @@ model Merchant {
   acceptedTermsAndConditions Boolean @default(false)
   acceptedPrivacyPolicy      Boolean @default(false)
   dismissCompleted           Boolean @default(false)
+
+  loyaltyProgram LoyaltyProgram @default(none)
+
+  lastFetched DateTime?
+
+  pointsMint String?
+  pointsBack Float?
+
+  products Product[]
+  tiers    Tier[]
+  customer Customer[]
 }
 
 model PaymentRecord {
@@ -78,7 +96,7 @@ model PaymentRecord {
   usdcAmount           Float
   cancelURL            String
   transactions         TransactionRecord[]
-  merchant             Merchant                      @relation(fields: [merchantId], references: [id])
+  merchant             Merchant                      @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   merchantId           String
   transactionSignature String? // Signature of the on chain transaction that was used to settle the payment with Shopify
   redirectUrl          String?
@@ -102,7 +120,7 @@ model RefundRecord {
   shopPaymentId        String // Given payment_id from Shopify, it will like to the 'shopId' in our database or 'id' from Shopify
   paymentRecord        PaymentRecord      @relation(fields: [shopPaymentId], references: [shopId])
   test                 Boolean
-  merchant             Merchant           @relation(fields: [merchantId], references: [id])
+  merchant             Merchant           @relation(fields: [merchantId], references: [id], onDelete: Cascade)
   merchantId           String
   transactionSignature String? // Signature of the on chain transaction that was used to settle the payment with Shopify
 
@@ -124,6 +142,7 @@ model TransactionRecord {
   refundRecord    RefundRecord?   @relation(fields: [refundRecordId], references: [id])
   refundRecordId  String?
   createdAt       DateTime        @default(now())
+  paidWithPoints  Boolean         @default(false)
 
   @@index(paymentRecordId)
   @@index(refundRecordId)
@@ -142,4 +161,47 @@ model WebsocketSession {
   paymentRecordId String
 
   @@index(paymentRecordId)
+}
+
+model Product {
+  id         String   @id
+  name       String
+  image      String?
+  active     Boolean  @default(false)
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchantId String
+  mint       String?
+
+  @@index(merchantId)
+}
+
+model Tier {
+  id         Int      @id @default(autoincrement())
+  name       String
+  threshold  Float
+  discount   Float
+  active     Boolean  @default(false)
+  merchant   Merchant @relation(fields: [merchantId], references: [id], onDelete: Cascade)
+  merchantId String
+  mint       String?
+
+  @@index(merchantId)
+}
+
+model Customer {
+  customerWalletAddress String
+  amountSpent           Float    @default(0)
+  merchant              Merchant @relation(fields: [merchantId], references: [id])
+  merchantId            String
+
+  @@id([merchantId, customerWalletAddress]) // Composite key on merchantId and customerWalletAddress
+  @@unique([merchantId, customerWalletAddress]) // Unique constraint on the same fields
+}
+
+model Checkout {
+  id            Int      @id @default(autoincrement())
+  checkoutToken String   @unique
+  productIds    String
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

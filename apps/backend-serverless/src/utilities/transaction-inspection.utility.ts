@@ -1,7 +1,7 @@
-import * as web3 from '@solana/web3.js';
-import { TOKEN_PROGRAM_ID, decodeTransferCheckedInstruction } from '@solana/spl-token';
-import { USDC_MINT } from '../configs/tokens.config.js';
 import * as Sentry from '@sentry/serverless';
+import { TOKEN_PROGRAM_ID, decodeTransferCheckedInstruction } from '@solana/spl-token';
+import * as web3 from '@solana/web3.js';
+import { USDC_MINT } from '../configs/tokens.config.js';
 /**
  *
  * @param transaction the transaction to inspect
@@ -14,8 +14,6 @@ export const findPayingWalletFromTransaction = async (transaction: web3.Transact
 
     const transferInstruction = transaction.instructions[transaction.instructions.length - 2];
 
-    console.log(transferInstruction.programId.toBase58());
-    console.log(TOKEN_PROGRAM_ID.toBase58());
     if (transferInstruction.programId.toBase58() != TOKEN_PROGRAM_ID.toBase58()) {
         throw new Error('Invalid transaction');
     }

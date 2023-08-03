@@ -1,93 +1,57 @@
 # Solana Payments App
 
-## Learn More
+This project allows Shopify merchants to accept crypto through their shopify store, and customers to purchase products using crypto.
 
-Right now the overall documentation is federated to respective directories. Overall overview documentation coming soon.
+[Visit Documentation](https://commercedocs.solanapay.com)
 
-[Payment App Backend](apps/backend-serverless/README.md) - Server that handles communication and orchestration of payments, merchant experience, and customer experience.<br>
-[Transaction Request Server](apps/transaction-request-serverless/README.md) - Server for building transaction for payments.<br>
-[Merchant UI](apps/merchant-ui/README.md) - The merchant frontend that where merchants manage their payments.<br>
-[Payment UI](apps/payment-ui/README.md) - The payment frontend where customers can complete payments.<br>
-[System Design](system-design/README.md) - Where we communicate overall system design decisions for the current state.<br>
+[Test Payment flow](solanatest8.myshopify.com)
 
-## How to Deploy Locally
+[Test Merchant Flow](merchant-staging.solanapay.com)
 
-### Get Your Helius API Key
+# Local Development
 
-Go to [Helius](https://www.helius.dev/) and create a new account. You can use an existing account if you like, but we will modify your webhooks so it is advised you create a new account. Once you have your API key from Helius, come back here.
+## Dependencies
 
-### Set up the Application
+These steps will get you up and running with a local dev environment, and you can later setup these environments for production
 
-1. clone the repo
+-   Dependencies
 
-```
-git clone git@github.com:solana-labs/solana-payments-app.git
-```
+    -   Docker Desktop
+    -   Mysql
 
-2. install the dependencies
+-   Keys
 
-```
-(from root)
-yarn
-```
+    -   Gas Keypair
+        -   .env.dev in backend serverless
+    -   [Helius API key](https://www.helius.dev)
+        -   .env.dev in backend serverless
 
-3. run ngrok to expose your local service to helius for transaction webhooks
+-   Dev Certs
 
-```
-ngrok http 4000
-```
+    -   [Follow this guide](https://blog.simontimms.com/2021/10/12/serverless-offline-https/)
+    -   included sample dev certs in backend-serverless & mock-shopify-serverless, must proceed to safety on google chrome
 
-4. create your .env.development files
+## Commands
 
-In each app
-
--   backend-serverless
--   payment-ui
--   merchant-ui
--   transaction-request-serverless
-
-You will need to copy the .sample.env.development file and replace the values that need to be changed, these are marked in the sample files.
-
-**Note** Make sure you use the ngrok url from the previous step for the HELIUS_WEBHOOK_URL var.
-
-5. generate your database database model
+Installation:
 
 ```
-(from /apps/backend-serverless/)
-npx prisma generate
+git clone https://github.com/solana-labs/solana-payments-app
+yarn install
+yarn setup:env
 ```
 
-6. migrate your database
-
-Note: To migrate your database, it must be running. If you're using the local database we help stand up through docker-compose, do that now.
+Once the dependencies are all setup, env variables are set:
 
 ```
-(from root)
-docker-compose up // If you're using our assisted local database
-
-(from /apps/backend-serverless)
-npx prisma migrate dev
-```
-
-7. stand everything up
-
-If you've done everything correctly to this point, standing up the app should be a single command
-
-```
-(from root)
 yarn dev
+yarn seed
 ```
 
-### Make a Payment
+## Testing
 
-Everything is running! Now let's make a payment. In production, Shopify sends a post request to the backend-serverless apps. Specifically, to our backender-serverless-green service. Go [here](/system-design/shopify/README.md#mutual-tls-mtls) to read more about why the backend-serverless app is split up into two deployed services. Locally, you have to invoke your own payment. You can do this by visiting https:localhost:4004/payment. This will mock a shopify request, create your payment, and redirect you to your locally hosted payment-ui. It should look like this
+Use these links to test out the local development flow
 
-PAYMENT UI IMAGE GOES HERE
+[Local Merchant UI](https://localhost:4004/install)
 
-Now you can pay by connecting your wallet OR you can scan with any mobile Solana wallet that support Solana Pay.
-
-**Note** To pay with a mobile Solana wallet, you must have set the BACKEND_URL env var inside of payment-ui in step 4 of the Set up the Application steps.
-
-## How to Contribute
-
-We need to flesh out more compartmentalized issues for developers to easily step in and contribute code. For now, please create an issue about further documentation you would like to see. Please make sure you set up our prettier and es-list packages and these don't conflict with your local setup. We use the [es-lint](https://github.com/solana-labs/eslint-config-solana) and [prettier](https://github.com/solana-labs/prettier-config-solana) packages from Solana Labs. Both should be installed with the rest of the dependencies.
+[Local Payment Simulation](https://localhost:4004/payment)

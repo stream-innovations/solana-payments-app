@@ -1,9 +1,11 @@
+import { PrismaClient } from '@prisma/client';
 import * as Sentry from '@sentry/serverless';
 import { APIGatewayProxyResultV2, APIGatewayProxyWebsocketEventV2 } from 'aws-lambda';
-import { PrismaClient } from '@prisma/client';
 import pkg from 'aws-sdk';
-import { WebsocketSessionService } from '../../services/database/websocket.database.service.js';
+import { parseAndValidateConnectSchema } from '../../models/websockets/connect.model.js';
 import { PaymentRecordService } from '../../services/database/payment-record-service.database.service.js';
+import { WebsocketSessionService } from '../../services/database/websocket.database.service.js';
+import { createErrorResponse } from '../../utilities/responses/error-response.utility.js';
 const { ApiGatewayManagementApi } = pkg;
 
 const prisma = new PrismaClient();
@@ -16,28 +18,31 @@ Sentry.AWSLambda.init({
 
 export const connect = Sentry.AWSLambda.wrapHandler(
     async (event: APIGatewayProxyWebsocketEventV2): Promise<APIGatewayProxyResultV2> => {
+        Sentry.captureEvent({
+            message: 'in websocket connect',
+            level: 'info',
+            extra: {
+                event,
+            },
+        });
         const websocketSessionService = new WebsocketSessionService(prisma);
         const paymentRecordService = new PaymentRecordService(prisma);
 
-        console.log(event);
+        try {
+            const connectParameters = parseAndValidateConnectSchema((event as any).queryStringParameters);
+            const connectionId = event.requestContext.connectionId;
 
-        const paymentId = (event as any).queryStringParameters.paymentId;
-        const connectionId = event.requestContext.connectionId;
+            const paymentRecord = await paymentRecordService.getPaymentRecord({ id: connectParameters.paymentId });
+            await websocketSessionService.createWebsocketSession(paymentRecord.id, connectionId);
 
-        const paymentRecord = await paymentRecordService.getPaymentRecord({ id: paymentId });
-
-        if (paymentRecord == null) {
-            // need a payment record or we dont care about you
-            throw new Error('Payment record not found');
+            return {
+                statusCode: 200,
+            };
+        } catch (error) {
+            return createErrorResponse(error);
         }
-
-        await websocketSessionService.createWebsocketSession(paymentRecord.id, connectionId);
-
-        return {
-            statusCode: 200,
-        };
     },
     {
         rethrowAfterCapture: false,
-    }
+    },
 );

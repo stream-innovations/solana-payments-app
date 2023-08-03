@@ -8,7 +8,7 @@ import {
     ValueDataTokenProgram,
     parseAndValidateGetAccountInfo,
 } from '../models/dependencies/get-account-info.model.js';
-import { HeliusBalance, parseAndValidateHeliusBalance } from '../models/dependencies/helius-balance.model.js';
+import { parseAndValidateHeliusBalance } from '../models/dependencies/helius-balance.model.js';
 import {
     HeliusEnhancedTransaction,
     HeliusEnhancedTransactionArray,
@@ -50,7 +50,7 @@ export const fetchEnhancedTransaction = async (transactionId: string): Promise<H
     return heliusEnhancedTransactions[0];
 };
 
-export const fetchHeliusBalance = async (pubkey: string): Promise<HeliusBalance> => {
+export const fetchBalance = async (publicKey: string, mint: string): Promise<number> => {
     let response: AxiosResponse;
 
     const apiKey = process.env.HELIUS_API_KEY;
@@ -59,7 +59,7 @@ export const fetchHeliusBalance = async (pubkey: string): Promise<HeliusBalance>
         throw new Error('No API key found');
     }
 
-    const heliusBalanceApiUrl = `https://api.helius.xyz/v0/addresses/${pubkey}/balances?api-key=${apiKey}`;
+    const heliusBalanceApiUrl = `https://api.helius.xyz/v0/addresses/${publicKey}/balances?api-key=${apiKey}`;
 
     try {
         response = await axios.get(heliusBalanceApiUrl);
@@ -69,26 +69,13 @@ export const fetchHeliusBalance = async (pubkey: string): Promise<HeliusBalance>
 
     const heliusBalance = parseAndValidateHeliusBalance(response.data);
 
-    return heliusBalance;
-};
+    const tokenBalance = heliusBalance.tokens.find(token => token.mint === mint);
 
-export const fetchUsdcSize = async (pubkey: string): Promise<number> => {
-    const heliusBalance = await fetchHeliusBalance(pubkey);
-
-    const usdcTokenBalance = heliusBalance.tokens.find(token => token.mint === USDC_MINT.toBase58());
-
-    if (usdcTokenBalance == null) {
+    if (tokenBalance == null) {
         return 0;
     }
 
-    const usdcSize = usdcTokenBalance.amount / 10 ** usdcTokenBalance.decimals;
-
-    return usdcSize;
-};
-
-export const fetchUsdcBalance = async (pubkey: string): Promise<string> => {
-    const usdcSize = await fetchUsdcSize(pubkey);
-    return `${usdcSize.toFixed(3)} USDC`;
+    return tokenBalance.amount / 10 ** tokenBalance.decimals;
 };
 
 export const getAccountInfo = async (pubkey: string): Promise<GetAccountInfo> => {
@@ -118,17 +105,17 @@ export const getAccountInfo = async (pubkey: string): Promise<GetAccountInfo> =>
         throw new DependencyError('helius rpc get account info');
     }
 
-    const getAccountInfo = parseAndValidateGetAccountInfo(response.data);
-
-    return getAccountInfo;
+    try {
+        return parseAndValidateGetAccountInfo(response.data);
+    } catch (error) {
+        throw new InvalidInputError('Did not receive Helius Get Account Info');
+    }
 };
 
 export const getPubkeyType = async (pubkey: string): Promise<PubkeyType> => {
     const accountInfo = await getAccountInfo(pubkey);
-    console.log('testing here');
     const owner = accountInfo.result.value.owner;
     const pubkeyType = getPubkeyTypeForProgramOwner(owner);
-    console.log(pubkeyType);
     if (pubkeyType == PubkeyType.token) {
         const data = accountInfo.result.value.data as ValueDataTokenProgram;
         const mint = data.parsed.info.mint;

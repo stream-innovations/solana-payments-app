@@ -1,8 +1,8 @@
-import { cloneElement } from 'react';
-import { twMerge } from 'tailwind-merge';
-import { useRouter } from 'next/router';
 import * as NavigationMenu from '@radix-ui/react-navigation-menu';
 import Link from 'next/link';
+import { useRouter } from 'next/router';
+import { cloneElement } from 'react';
+import { twMerge } from 'tailwind-merge';
 
 interface Props {
     className?: string;
@@ -21,7 +21,6 @@ export function DefaultLayoutNavigationLink(props: Props) {
             <NavigationMenu.Link asChild>
                 <Link
                     className={twMerge(
-                        'gap-x-4',
                         'gap-x-3',
                         'group',
                         'grid',
@@ -31,7 +30,7 @@ export function DefaultLayoutNavigationLink(props: Props) {
                         'rounded-md',
                         'transition-colors',
                         isSelected && 'bg-slate-50',
-                        props.renderInRhs ? 'grid-cols-[24px,1fr,max-content]' : 'grid-cols-[24px,1fr]'
+                        props.renderInRhs ? 'grid-cols-[24px,1fr,max-content]' : 'grid-cols-[24px,1fr]',
                     )}
                     href={props.href}
                 >
@@ -42,14 +41,14 @@ export function DefaultLayoutNavigationLink(props: Props) {
                             'transition-colors',
                             'w-6',
                             isSelected && 'fill-indigo-600',
-                            props.icon.props.className
+                            props.icon.props.className,
                         ),
                     })}
                     <div
                         className={twMerge(
                             'transition-all',
                             'group-hover:font-semibold',
-                            isSelected && 'font-semibold'
+                            isSelected && 'font-semibold',
                         )}
                     >
                         {props.text}

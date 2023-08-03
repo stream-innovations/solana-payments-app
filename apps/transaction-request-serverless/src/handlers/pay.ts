@@ -1,94 +1,64 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import {
-    PaymentTransactionBuilder,
-    PaymentTransactionRequest,
-    parseAndValidatePaymentTransactionRequest,
-} from '../models/payment-transaction-request.model.js';
-import { decode } from '../utils/strings.util.js';
-import { createConnection } from '../utils/connection.util.js';
+import * as Sentry from '@sentry/serverless';
 import * as web3 from '@solana/web3.js';
+import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import { InvalidInputError } from '../errors/invalid-input.error.js';
+import { parseAndValidatePaymentTransactionBody } from '../models/payment-transaction-body.js';
+import { parseAndValidatePaymentTransactionRequest } from '../models/payment-transaction-request.model.js';
+import { PaymentTransactionBuilder } from '../services/builders/payment-transaction-ix.builder.js';
+import { createConnection } from '../utilities/connection.utility.js';
+import { createErrorResponse } from '../utilities/error-response.utility.js';
 
-export const pay = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-    let paymentTransactionRequest: PaymentTransactionRequest;
+Sentry.AWSLambda.init({
+    dsn: process.env.SENTRY_DSN,
+    tracesSampleRate: 1.0,
+});
 
-    if (event.body == null) {
-        return {
-            statusCode: 501,
-            body: JSON.stringify({ error: 'fuck' }, null, 2),
-        };
-    }
-
-    const body = JSON.parse(event.body);
-    const account = body['account'] as string | null;
-
-    if (account == null) {
-        return {
-            statusCode: 507,
-            body: JSON.stringify({ error: 'fuck' }, null, 2),
-        };
-    }
-
-    if (event.queryStringParameters == null) {
-        return {
-            statusCode: 509,
-            body: JSON.stringify({ message: 'damn' }, null, 2),
-        };
-    }
-
-    const queryParameters = event.queryStringParameters;
-
-    queryParameters['sender'] = account;
-
-    try {
-        paymentTransactionRequest = parseAndValidatePaymentTransactionRequest(queryParameters);
-    } catch (error) {
-        console.log(error);
-        return {
-            statusCode: 503,
-            body: JSON.stringify({ message: 'bufff' }, null, 2),
-        };
-    }
-
-    console.log(paymentTransactionRequest);
-    console.log(paymentTransactionRequest.receiverTokenAddress);
-    console.log(paymentTransactionRequest.receiverWalletAddress);
-
-    const transactionBuilder = new PaymentTransactionBuilder(paymentTransactionRequest);
-
-    const connection = createConnection();
-
-    let transaction: web3.Transaction;
-
-    try {
-        transaction = await transactionBuilder.buildPaymentTransaction(connection);
-    } catch (error) {
-        console.log(error);
-        return {
-            statusCode: 504,
-            body: JSON.stringify({ message: 'ahhh' }, null, 2),
-        };
-    }
-
-    let base: string;
-
-    try {
-        base = transaction.serialize({ requireAllSignatures: false, verifySignatures: false }).toString('base64');
-    } catch {
-        return {
-            statusCode: 505,
-            body: JSON.stringify({ message: 'grrr' }, null, 2),
-        };
-    }
-
-    return {
-        statusCode: 200,
-        body: JSON.stringify(
-            {
-                transaction: base,
-                message: 'message sent',
+export const pay = Sentry.AWSLambda.wrapHandler(
+    async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
+        Sentry.captureEvent({
+            message: 'In PAY TRS',
+            level: 'info',
+            extra: {
+                event: event,
             },
-            null,
-            2
-        ),
-    };
-};
+        });
+
+        if (event.body == null) {
+            return createErrorResponse(new InvalidInputError('missing body in request'));
+        }
+
+        try {
+            let paymentTransactionRequest = parseAndValidatePaymentTransactionRequest(event.queryStringParameters);
+
+            let paymentTransactionBody = parseAndValidatePaymentTransactionBody(JSON.parse(event.body));
+
+            const transactionBuilder = new PaymentTransactionBuilder(paymentTransactionRequest, paymentTransactionBody);
+
+            const connection = createConnection();
+
+            let transaction: web3.Transaction = await transactionBuilder.buildPaymentTransaction(connection);
+
+            let base = transaction
+                .serialize({ requireAllSignatures: false, verifySignatures: false })
+                .toString('base64');
+
+            return {
+                statusCode: 200,
+                body: JSON.stringify(
+                    {
+                        transaction: base,
+                        message: 'Tranasction created successfully',
+                    },
+                    null,
+                    2
+                ),
+            };
+        } catch (error) {
+            return createErrorResponse(error);
+        }
+    },
+    {
+        captureTimeoutWarning: false,
+        rethrowAfterCapture: false,
+    }
+);

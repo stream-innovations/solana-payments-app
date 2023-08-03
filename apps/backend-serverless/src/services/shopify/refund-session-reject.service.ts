@@ -1,11 +1,12 @@
-import { AxiosInstance } from 'axios';
+import * as Sentry from '@sentry/node';
+import axios, { AxiosInstance } from 'axios';
+import https from 'https';
 import { shopifyGraphQLEndpoint } from '../../configs/endpoints.config.js';
+import { ShopifyResponseError } from '../../errors/shopify-response.error.js';
 import {
     RejectRefundResponse,
     parseAndValidateRejectRefundResponse,
 } from '../../models/shopify-graphql-responses/reject-refund-response.model.js';
-import { ShopifyResponseError } from '../../errors/shopify-response.error.js';
-import * as Sentry from '@sentry/node';
 
 const refundSessionRejectMutation = `mutation RefundSessionReject($id: ID!, $reason: RefundSessionRejectionReasonInput!) {
     refundSessionReject(id: $id, reason: $reason) {
@@ -59,13 +60,28 @@ export const makeRefundSessionReject =
 
         let rejectRefundResponse: RejectRefundResponse;
 
+        let response;
         try {
-            const response = await axiosInstance({
-                url: shopifyGraphQLEndpoint(shop),
-                method: 'POST',
-                headers: headers,
-                data: JSON.stringify(graphqlQuery),
-            });
+            if (process.env.NODE_ENV === 'development') {
+                const agent = new https.Agent({
+                    rejectUnauthorized: false,
+                });
+
+                response = await axios({
+                    url: shopifyGraphQLEndpoint(shop),
+                    method: 'POST',
+                    headers: headers,
+                    data: JSON.stringify(graphqlQuery),
+                    httpsAgent: agent,
+                });
+            } else {
+                response = await axios({
+                    url: shopifyGraphQLEndpoint(shop),
+                    method: 'POST',
+                    headers: headers,
+                    data: JSON.stringify(graphqlQuery),
+                });
+            }
 
             switch (response.status) {
                 case 200:
@@ -76,10 +92,9 @@ export const makeRefundSessionReject =
                     rejectRefundResponse = parseAndValidateRejectRefundResponse(response.data);
                     break;
                 default:
-                    const shopifyResponseError = new ShopifyResponseError(
+                    throw new ShopifyResponseError(
                         'non successful status code ' + response.status + '. data: ' + JSON.stringify(response.data)
                     );
-                    throw shopifyResponseError;
             }
         } catch (error) {
             console.log(error);

@@ -6,8 +6,7 @@ provider:
   runtime: nodejs18.x
   environment:
     RPC_URL: ${env:RPC_URL}
-package:
-  excludeDevDependencies: false
+    SENTRY_DSN: ${env:SENTRY_DSN}
 functions:
   pay:
     handler: src/handlers/pay.pay
@@ -15,14 +14,27 @@ functions:
       - httpApi:
           path: /pay
           method: post
+  points-setup:
+    handler: src/handlers/points-setup.pointsSetup
+    events:
+      - httpApi:
+          path: /points-setup
+          method: post
 
 plugins:
+  - serverless-plugin-optimize
   - serverless-plugin-typescript
-  - serverless-plugin-common-excludes # this should go before serverless-plugin-include-dependencies
-  - serverless-plugin-include-dependencies
+  - serverless-prune-plugin
+  - serverless-prune-versions
   - serverless-offline
+  - serverless-plugin-common-excludes
+  - serverless-plugin-include-dependencies
 
 custom:
   serverless-offline:
     httpPort: 4002
     lambdaPort: 4003
+  prune:
+    automatic: true
+    includeLayers: true
+    number: 3

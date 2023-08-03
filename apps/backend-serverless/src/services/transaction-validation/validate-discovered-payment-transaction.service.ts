@@ -1,8 +1,7 @@
 import { PaymentRecord, RefundRecord } from '@prisma/client';
-import { USDC_MINT } from '../../configs/tokens.config.js';
-import * as web3 from '@solana/web3.js';
 import { TOKEN_PROGRAM_ID, decodeTransferCheckedInstruction } from '@solana/spl-token';
-import { HeliusEnhancedTransaction } from '../../models/dependencies/helius-enhanced-transaction.model.js';
+import * as web3 from '@solana/web3.js';
+import { USDC_MINT } from '../../configs/tokens.config.js';
 import { MissingEnvError } from '../../errors/missing-env.error.js';
 import { findPayingWalletFromTransaction } from '../../utilities/transaction-inspection.utility.js';
 
@@ -17,6 +16,17 @@ export const verifyTransactionWithRecord = (
     verifySingleUseInstruction(transaction);
     verifyTransferInstructionIsCorrect(transaction, record);
     verifyPayerIsNotHistoricalFeePayer(transaction);
+};
+
+export const verifyTransactionWithRecordPoints = (
+    record: PaymentRecord | RefundRecord,
+    transaction: web3.Transaction,
+    weShouldHaveSigned: boolean
+) => {
+    if (weShouldHaveSigned) {
+        verifyAppCreatedTheTransaction(transaction);
+    }
+    verifySingleUseInstruction(transaction);
 };
 
 // export const verifyRecordWithHeliusTranscation = (
@@ -99,8 +109,6 @@ export const verifyTransferInstructionIsCorrect = (
     const instructions = transaction.instructions;
     const transferInstruction = instructions[instructions.length - 2];
 
-    console.log('hello world');
-
     if (transferInstruction.programId.toBase58() != TOKEN_PROGRAM_ID.toBase58()) {
         throw new Error('The token transfer instruction was not in the correct position.');
     }
@@ -121,9 +129,10 @@ export const verifyTransferInstructionIsCorrect = (
     const paymentRecordUsdcSize = parseFloat(record.usdcAmount.toFixed(6));
     const paymentRecordUsdcQuantity = paymentRecordUsdcSize * 10 ** 6;
 
-    if (Number(decodedTransferQuantity) !== paymentRecordUsdcQuantity) {
-        throw new Error('The token transfer instruction was notd for the correct amount of USDC');
-    }
+    // TODO readjust check, since the discount
+    // if (Number(decodedTransferQuantity) !== paymentRecordUsdcQuantity) {
+    //     throw new Error('The token transfer instruction was notd for the correct amount of USDC');
+    // }
 };
 
 // KEEP
@@ -137,10 +146,6 @@ export const verifyAppCreatedTheTransaction = (transaction: web3.Transaction) =>
     }
 
     const feePayers = historicalFeePayers();
-
-    console.log(feePayer.toBase58());
-
-    console.log(feePayers.includes(feePayer.toBase58()));
 
     if (!feePayers.includes(feePayer.toBase58())) {
         throw new Error('The transaction was not created by the app');
@@ -170,8 +175,6 @@ export const verifySingleUseInstruction = (transaction: web3.Transaction) => {
     const singleUseInstruction = instructions[0];
 
     // Check the instruction is a system program account creation
-
-    console.log(singleUseInstruction.programId.toBase58());
 
     // if (singleUseInstruction.programId.toBase58() != TOKEN_PROGRAM_ID.toBase58()) {
     //     throw new Error('The single use instruction was not a system program instruction.');
@@ -209,11 +212,8 @@ export const verifySingleUseInstruction = (transaction: web3.Transaction) => {
 //     // }
 // };
 
-// TODO: Make this return a sting of pubkeys
 export const historicalFeePayers = (): string[] => {
     const historicalFeePayersString = process.env.HISTORICAL_FEE_PAYERS;
-
-    console.log(historicalFeePayersString);
 
     if (historicalFeePayersString == null) {
         throw new MissingEnvError('historical fee payers');

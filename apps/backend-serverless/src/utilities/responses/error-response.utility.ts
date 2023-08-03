@@ -1,15 +1,9 @@
-import { ConflictingStateError } from '../../errors/conflicting-state.error.js';
-import { DependencyError } from '../../errors/dependency.error.js';
-import { InvalidInputError } from '../../errors/invalid-input.error.js';
-import { MissingEnvError } from '../../errors/missing-env.error.js';
-import { MissingExpectedDatabaseRecordError } from '../../errors/missing-expected-database-record.error.js';
-import { MissingExpectedDatabaseValueError } from '../../errors/missing-expected-database-value.error.js';
-import { RiskyWalletError } from '../../errors/risky-wallet.error.js';
-import { UnauthorizedRequestError } from '../../errors/unauthorized-request.error.js';
+import * as Sentry from '@sentry/serverless';
 
 export enum ErrorType {
     badRequest = 400,
     unauthorized = 401,
+    forbidden = 403,
     notFound = 404,
     conflict = 409,
     internalServerError = 500,
@@ -21,6 +15,7 @@ export enum ErrorMessage {
     missingBody = 'Missing body from request.',
     missingEnv = 'Missing internal configuration.',
     missingHeader = 'Missing header from request.',
+    forbidden = 'Invalid cookie. Your cookie may have expired or is not valid.',
     unknownMerchant = 'Merchant not found.',
     unknownPaymentRecord = 'Payment record not found.',
     unknownRefundRecord = 'Refund record not found.',
@@ -35,44 +30,61 @@ export enum ErrorMessage {
     unauthorizedMerchant = 'Merchant is not authorized.',
 }
 
-export const errorResponse = (errorType: ErrorType, errorMessage: string) => {
-    return {
-        statusCode: errorType.valueOf(),
-        body: JSON.stringify({
-            error: errorMessage,
-        }),
-    };
-};
+export const createErrorResponse = async (error: unknown) => {
+    let statusCode: ErrorType;
+    let message: string;
 
-export const createErrorResponse = (error: unknown) => {
-    if (error instanceof MissingEnvError) {
-        return fooBar(ErrorType.internalServerError, error.message);
-    } else if (error instanceof UnauthorizedRequestError) {
-        return fooBar(ErrorType.unauthorized, error.message);
-    } else if (error instanceof MissingExpectedDatabaseRecordError) {
-        return fooBar(ErrorType.notFound, error.message);
-    } else if (error instanceof ConflictingStateError) {
-        return fooBar(ErrorType.conflict, error.message);
-    } else if (error instanceof DependencyError) {
-        return fooBar(ErrorType.internalServerError, error.message);
-    } else if (error instanceof InvalidInputError) {
-        return fooBar(ErrorType.badRequest, error.message);
-    } else if (error instanceof MissingExpectedDatabaseValueError) {
-        return fooBar(ErrorType.notFound, error.message);
-    } else if (error instanceof RiskyWalletError) {
-        return fooBar(ErrorType.unauthorized, error.message);
-    } else if (error instanceof Error) {
-        return fooBar(ErrorType.internalServerError, error.message);
+    if (error instanceof Error) {
+        switch (error.name) {
+            case 'MissingEnvError':
+                statusCode = ErrorType.internalServerError;
+                break;
+            case 'UnauthorizedRequestError':
+                statusCode = ErrorType.unauthorized;
+                break;
+            case 'MissingExpectedDatabaseRecordError':
+                statusCode = ErrorType.notFound;
+                break;
+            case 'ForbiddenError':
+                statusCode = ErrorType.forbidden;
+                break;
+            case 'ConflictingStateError':
+                statusCode = ErrorType.conflict;
+                break;
+            case 'DependencyError':
+                statusCode = ErrorType.internalServerError;
+                break;
+            case 'InvalidInputError':
+                statusCode = ErrorType.badRequest;
+                break;
+            case 'MissingExpectedDatabaseValueError':
+                statusCode = ErrorType.notFound;
+                break;
+            case 'RiskyWalletError':
+                statusCode = ErrorType.unauthorized;
+                break;
+            case 'ShopifyResponseError':
+                statusCode = ErrorType.internalServerError;
+                break;
+            default:
+                statusCode = ErrorType.internalServerError;
+        }
+        message = error.message;
     } else {
-        return fooBar(ErrorType.internalServerError, 'Unknown error. Please contact support.');
+        statusCode = ErrorType.internalServerError;
+        message = 'Unknown error. Please contact support.';
     }
-};
 
-const fooBar = (statusCode: number, message: string) => {
+    console.log('error', error);
+    Sentry.captureException(error, {
+        extra: {
+            message,
+        },
+    });
+    await Sentry.flush(2000);
+
     return {
         statusCode,
-        body: JSON.stringify({
-            error: message,
-        }),
+        body: JSON.stringify({ error: message }),
     };
 };

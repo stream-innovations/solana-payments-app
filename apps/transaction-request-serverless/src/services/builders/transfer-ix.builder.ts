@@ -1,7 +1,7 @@
+import { createTransferCheckedInstruction } from '@solana/spl-token';
 import * as web3 from '@solana/web3.js';
-import { findAssociatedTokenAddress, createAssociatedTokenAccountInstruction } from '../../utils/ata.util.js';
-import { createTransferCheckedInstruction, createAccount } from '@solana/spl-token';
 import { TokenInformation } from '../../configs/token-list.config.js';
+import { createAssociatedTokenAccountInstruction, findAssociatedTokenAddress } from '../../utilities/ata.utility.js';
 
 export const createTransferIx = async (
     sender: web3.PublicKey,
@@ -10,16 +10,17 @@ export const createTransferIx = async (
     token: TokenInformation,
     quantity: number,
     createAta: boolean,
-    connection: web3.Connection
+    connection: web3.Connection,
+    feePayer: web3.PublicKey | null,
 ): Promise<web3.TransactionInstruction[]> => {
     const transferIxs: web3.TransactionInstruction[] = [];
 
     const senderTokenAddress: web3.PublicKey = await findAssociatedTokenAddress(sender, token.pubkey);
 
-    let finalReceiverTokenAddress: web3.PublicKey = await getFinalReceiverTokenAddress(
+    const finalReceiverTokenAddress: web3.PublicKey = await getFinalReceiverTokenAddress(
         receiverWalletAddress,
         receiverTokenAddress,
-        token
+        token,
     );
 
     const info = await connection.getAccountInfo(finalReceiverTokenAddress);
@@ -29,11 +30,15 @@ export const createTransferIx = async (
             throw new Error('Receiver wallet address cannot be null if you need to create the ata.');
         }
 
+        if (feePayer == null) {
+            throw new Error('Fee payer cannot be null');
+        }
+
         const createAssociatedInstruction = createAssociatedTokenAccountInstruction(
             finalReceiverTokenAddress,
-            sender,
+            feePayer,
             receiverWalletAddress,
-            token.pubkey
+            token.pubkey,
         );
 
         transferIxs.push(createAssociatedInstruction);
@@ -45,7 +50,7 @@ export const createTransferIx = async (
         finalReceiverTokenAddress,
         sender,
         quantity,
-        token.decimals
+        token.decimals,
     );
 
     transferIxs.push(transfer);
@@ -56,7 +61,7 @@ export const createTransferIx = async (
 const getFinalReceiverTokenAddress = async (
     receiverWalletAddress: web3.PublicKey | null,
     receiverTokenAddress: web3.PublicKey | null,
-    token: TokenInformation
+    token: TokenInformation,
 ): Promise<web3.PublicKey> => {
     let finalReceiverTokenAddress: web3.PublicKey | null = null;
 
@@ -71,6 +76,7 @@ const getFinalReceiverTokenAddress = async (
         if (receiverTokenAddress.toBase58() != tempAssociatedTokenAddress.toBase58()) {
             throw new Error('Receiver wallet address and receiver token address do not match.');
         }
+        finalReceiverTokenAddress = receiverTokenAddress;
     }
 
     if (finalReceiverTokenAddress == null) {

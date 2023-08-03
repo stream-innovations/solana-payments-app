@@ -17,6 +17,35 @@ export interface PaymentDetails {
     completed: boolean;
 }
 
+export interface Product {
+    id: string;
+    name?: string;
+    image?: string;
+    active: boolean;
+    mint?: string;
+    merchantId: string;
+}
+
+interface Tier {
+    id: string;
+    name: string;
+    threshold: number;
+    discount: number;
+    active: boolean;
+    mint?: string;
+    merchantId: string;
+}
+
+export interface LoyaltyDetails {
+    loyaltyProgram: 'none' | 'points' | 'tiers';
+    points: {
+        pointsMint: string | null;
+        pointsBack: number;
+    };
+    products: Product[];
+    tiers: Tier[];
+}
+
 export interface ErrorDetails {
     errorTitle: string;
     errorDetail: string;
@@ -28,11 +57,16 @@ export interface PaymentDetailsState {
     status: PaymentDetailsStatus;
     paymentDetails: PaymentDetails | null;
     errorDetails: ErrorDetails | null;
+    loyaltyDetails: LoyaltyDetails | null;
+    productDetails: Product[];
 }
 
 export interface PaymentDetailsResponse {
     paymentDetails: PaymentDetails | null;
     errorDetails: ErrorDetails | null;
+
+    loyaltyDetails: LoyaltyDetails | null;
+    productDetails: Product[];
 }
 
 const initalState: PaymentDetailsState = {
@@ -40,6 +74,8 @@ const initalState: PaymentDetailsState = {
     status: PaymentDetailsStatus.new,
     paymentDetails: null,
     errorDetails: null,
+    loyaltyDetails: null,
+    productDetails: [],
 };
 
 const paymentDetailsSlice = createSlice({
@@ -68,6 +104,8 @@ const paymentDetailsSlice = createSlice({
                     state.status = PaymentDetailsStatus.fresh;
                     state.paymentDetails = action.payload.paymentDetails;
                     state.errorDetails = action.payload.errorDetails;
+                    state.loyaltyDetails = action.payload.loyaltyDetails;
+                    state.productDetails = action.payload.productDetails;
                 }
             );
     },
@@ -92,52 +130,43 @@ export const getPaymentSize = (state: RootState): number | null =>
 export const getPaymentRedirectUrl = (state: RootState): string | null =>
     state.paymentDetails.paymentDetails?.redirectUrl ?? null;
 
+export const getLoyaltyDetails = (state: RootState): LoyaltyDetails | null => state.paymentDetails.loyaltyDetails;
+export const getProductDetails = (state: RootState): Product[] => state.paymentDetails.productDetails;
+
 export const fetchPaymentDetails = createAsyncThunk<PaymentDetailsResponse>(
     'paymentDetails/fetchPaymentDetails',
     async (_, { getState }): Promise<PaymentDetailsResponse> => {
         const state = getState() as RootState;
         const paymentId = state.paymentDetails.paymentId;
-        const backendUrl = state.env.backendUrl;
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL;
 
-        console.log(paymentId);
-        console.log(backendUrl);
+        try {
+            if (backendUrl == null || paymentId == null) {
+                throw new Error(
+                    'There is a fatal error with this app. Missing env variables. Please return back to Shopify.'
+                );
+            }
 
-        if (backendUrl == null || paymentId == null) {
+            const url = `${backendUrl}/payment-status?paymentId=${paymentId}&language=en`;
+            const response = await axios.get(url);
+            console.log('got back the product detaisl', response.data.productDetails);
+            return {
+                paymentDetails: response.data.paymentStatus,
+                errorDetails: response.data.error,
+                loyaltyDetails: response.data.loyaltyDetails,
+                productDetails: response.data.productDetails,
+            };
+        } catch (error) {
             return {
                 paymentDetails: null,
                 errorDetails: {
                     errorTitle: 'Internal Error',
-                    errorDetail: 'There is a fatal error with this app. Please return back to Shopify.',
+                    errorDetail: 'There is a fatal error with this app. Internal Error. Please return back to Shopify.',
                     errorRedirect: null,
                 },
+                loyaltyDetails: null,
+                productDetails: [],
             };
         }
-
-        let paymentDetails: PaymentDetails | null;
-        let errorDetails: ErrorDetails | null;
-
-        // const headers = {
-        //     'Access-Control-Allow-Origin': 'localhost',
-        // };
-
-        try {
-            const url = `${backendUrl}/payment-status?paymentId=${paymentId}&language=en`;
-            const response = await axios.get(url);
-            console.log(response.data);
-            paymentDetails = response.data.paymentStatus;
-            errorDetails = response.data.error;
-        } catch (error) {
-            console.log(error);
-            return {
-                // TODO: Figure something out other than crashing lol
-                paymentDetails: null,
-                errorDetails: null,
-            };
-        }
-
-        return {
-            paymentDetails: paymentDetails,
-            errorDetails: errorDetails,
-        };
     }
 );

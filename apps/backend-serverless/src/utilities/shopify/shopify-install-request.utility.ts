@@ -1,15 +1,13 @@
+import crypto from 'crypto';
+import { MissingEnvError } from '../../errors/missing-env.error.js';
+import { UnauthorizedRequestError } from '../../errors/unauthorized-request.error.js';
 import {
     AppInstallQueryParam,
     parseAndValidateAppInstallQueryParms,
 } from '../../models/shopify/install-query-params.model.js';
-import crypto from 'crypto-js';
 import { stringifyParams } from './stringify-params.utility.js';
-import { UnauthorizedRequestError } from '../../errors/unauthorized-request.error.js';
-import { MissingEnvError } from '../../errors/missing-env.error.js';
 
 export const verifyAndParseShopifyInstallRequest = (appInstallQuery: unknown): AppInstallQueryParam => {
-    // Verify that the object passed in can be parsed into an AppInstallQueryParam object
-
     let parsedAppInstallQuery: AppInstallQueryParam;
 
     try {
@@ -18,28 +16,25 @@ export const verifyAndParseShopifyInstallRequest = (appInstallQuery: unknown): A
         throw new UnauthorizedRequestError('could not parse the query parameters.');
     }
 
-    // Save the hmac, remove it from the object, get the query string after removing
-    const hmac = parsedAppInstallQuery.hmac;
-
-    if (hmac == undefined) {
-        throw new UnauthorizedRequestError('request did not include hmac.');
+    if (!parsedAppInstallQuery.hmac) {
+        throw new UnauthorizedRequestError('Request did not include hmac.');
     }
 
+    const hmac = parsedAppInstallQuery.hmac;
     delete parsedAppInstallQuery['hmac'];
-    const queryStringAfterRemoving = stringifyParams(parsedAppInstallQuery);
 
     const secret = process.env.SHOPIFY_SECRET_KEY;
-
-    // Check for a secret key to decode with
     if (secret == undefined) {
         throw new MissingEnvError('shopify secret');
     }
 
-    const digest = crypto.HmacSHA256(queryStringAfterRemoving, secret);
-    const digestString = digest.toString();
+    const hmacGenerated = crypto
+        .createHmac('sha256', secret)
+        .update(Buffer.from(stringifyParams(parsedAppInstallQuery)))
+        .digest('hex');
 
-    if (digestString != hmac) {
-        throw new UnauthorizedRequestError('hmac did not match.');
+    if (hmacGenerated != hmac) {
+        throw new UnauthorizedRequestError('hmac did not match. install ' + JSON.stringify(parsedAppInstallQuery));
     }
 
     return parsedAppInstallQuery;
@@ -53,6 +48,10 @@ export const createShopifyOAuthGrantRedirectUrl = (shop: string, nonce: string) 
     return `https://${shop}/admin/oauth/authorize?client_id=${clientId}&scope=${createScopeString([
         ShopifyScope.WRITE_PAYMENT_GATEWAYS,
         ShopifyScope.WRITE_PAYMENT_SESSIONS,
+        ShopifyScope.READ_PRODUCTS,
+        ShopifyScope.READ_PRODUCTS_LISTING,
+        ShopifyScope.READ_CHECKOUTS,
+        ShopifyScope.READ_ORDERS,
     ])}&redirect_uri=${redirectUrl}&state=${nonce}`;
 };
 
@@ -64,4 +63,8 @@ export const createScopeString = (scopes: ShopifyScope[]) => {
 export enum ShopifyScope {
     WRITE_PAYMENT_GATEWAYS = 'write_payment_gateways',
     WRITE_PAYMENT_SESSIONS = 'write_payment_sessions',
+    READ_PRODUCTS = 'read_products',
+    READ_PRODUCTS_LISTING = 'read_product_listings',
+    READ_CHECKOUTS = 'read_checkouts',
+    READ_ORDERS = 'read_orders',
 }

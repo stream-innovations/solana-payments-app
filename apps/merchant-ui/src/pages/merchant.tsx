@@ -1,12 +1,17 @@
 import { DefaultLayout } from '@/components/DefaultLayout';
+import Merchant404 from '@/components/Merchant404';
 import { MerchantInfo } from '@/components/MerchantInfo';
-import { isOk } from '@/lib/Result';
+import { isFailed, isOk } from '@/lib/Result';
 import { useMerchantStore } from '@/stores/merchantStore';
 import Head from 'next/head';
 import Router from 'next/router';
 
 export default function Merchant() {
     const merchantInfo = useMerchantStore(state => state.merchantInfo);
+    if (isFailed(merchantInfo)) {
+        return <Merchant404 />;
+    }
+
     if (isOk(merchantInfo) && !merchantInfo.data.completed) {
         Router.push('/getting-started');
     }

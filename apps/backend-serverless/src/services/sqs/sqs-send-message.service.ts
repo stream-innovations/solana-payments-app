@@ -1,5 +1,11 @@
+import * as Sentry from '@sentry/serverless';
 import pkg from 'aws-sdk';
+import { DependencyError } from '../../errors/dependency.error.js';
 import { MissingEnvError } from '../../errors/missing-env.error.js';
+import {
+    PaymentSessionStateRejectedReason,
+    RefundSessionStateRejectedReason,
+} from '../../models/shopify-graphql-responses/shared.model.js';
 import {
     ShopifyMutationAppConfigure,
     ShopifyMutationPaymentReject,
@@ -9,12 +15,6 @@ import {
     ShopifyMutationRetryType,
 } from '../../models/sqs/shopify-mutation-retry.model.js';
 import { nextRetryTimeInterval, retry } from '../../utilities/shopify-retry/shopify-retry.utility.js';
-import {
-    PaymentSessionStateRejectedReason,
-    RefundSessionStateRejectedReason,
-} from '../../models/shopify-graphql-responses/shared.model.js';
-import * as Sentry from '@sentry/serverless';
-import { DependencyError } from '../../errors/dependency.error.js';
 const { SQS } = pkg;
 
 /*
@@ -148,8 +148,6 @@ export const sendProcessTransactionMessage = async (signature: string, sqs: pkg.
         throw new MissingEnvError('process queue url');
     }
 
-    console.log(queueUrl);
-
     const maxNumberOfSendMessageAttempts = 3;
 
     const attempts = await retry(() => {
@@ -176,8 +174,6 @@ export const sendSolanaPayInfoMessage = async (account: string, paymentRecordId:
         throw new MissingEnvError('solana pay queue url');
     }
 
-    console.log(queueUrl);
-
     const maxNumberOfSendMessageAttempts = 3;
 
     const attempts = await retry(() => {
@@ -189,7 +185,11 @@ export const sendSolanaPayInfoMessage = async (account: string, paymentRecordId:
                     paymentRecordId: paymentRecordId,
                 }),
             })
-            .promise();
+            .promise()
+            .catch(error => {
+                console.error(error); // Log the error
+                throw error;
+            });
     }, maxNumberOfSendMessageAttempts);
 
     if (attempts === maxNumberOfSendMessageAttempts) {

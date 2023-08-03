@@ -1,4 +1,6 @@
 import { PrismaClient, TransactionRecord, TransactionType } from '@prisma/client';
+import { MissingExpectedDatabaseRecordError } from '../../errors/missing-expected-database-record.error.js';
+import { prismaErrorHandler } from './shared.database.service.js';
 
 // --- TransactionRecordService CRUD Operations ---
 // 1. getTransactionRecord
@@ -28,16 +30,29 @@ export class TransactionRecordService {
         this.prisma = prismaClient;
     }
 
-    async getTransactionRecord(query: TransactionRecordQuery): Promise<TransactionRecord | null> {
-        return await this.prisma.transactionRecord.findFirst({
+    async getTransactionRecord(query: TransactionRecordQuery): Promise<TransactionRecord> {
+        const transaction = await this.prisma.transactionRecord.findFirst({
             where: query,
         });
+        if (transaction == null) {
+            throw new MissingExpectedDatabaseRecordError(
+                'Could not find transaction ' + JSON.stringify(query) + ' in database'
+            );
+        }
+        return transaction;
     }
 
-    async getTransactionRecords(signatures: string[]): Promise<TransactionRecord[] | null> {
-        return await this.prisma.transactionRecord.findMany({
+    async getTransactionRecords(signatures: string[]): Promise<TransactionRecord[]> {
+        const transactions = await this.prisma.transactionRecord.findMany({
             where: { signature: { in: signatures } },
         });
+
+        if (transactions == null) {
+            throw new MissingExpectedDatabaseRecordError(
+                'Could not find transactions ' + JSON.stringify(signatures) + ' in database'
+            );
+        }
+        return transactions;
     }
 
     async getTransactionRecordsForPendingPayments(): Promise<TransactionRecord[]> {
@@ -64,7 +79,8 @@ export class TransactionRecordService {
         signature: string,
         transactionType: TransactionType,
         paymentRecordId: string | null,
-        refundRecordId: string | null
+        refundRecordId: string | null,
+        paidWithPoints: boolean = false
     ): Promise<TransactionRecord> {
         if (paymentRecordId == null && refundRecordId == null) {
             throw new Error('paymentRecordId and refundRecordId cannot both be null');
@@ -87,6 +103,7 @@ export class TransactionRecordService {
             signature: signature,
             type: transactionType,
             createdAt: new Date(),
+            paidWithPoints: paidWithPoints,
         };
 
         // Depending on the transaction type, add the correct record ID
@@ -100,12 +117,10 @@ export class TransactionRecordService {
         }
 
         // Create the transaction record
-        try {
-            return await this.prisma.transactionRecord.create({
+        return prismaErrorHandler(
+            this.prisma.transactionRecord.create({
                 data: transactionRecordData,
-            });
-        } catch {
-            throw new Error('Failed to create transaction record.');
-        }
+            })
+        );
     }
 }

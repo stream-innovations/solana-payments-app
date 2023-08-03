@@ -1,9 +1,10 @@
 import axios from 'axios';
-import { accessTokenEndpoint } from '../utilities/transaction-request/endpoints.utility.js';
+import https from 'https';
 import {
     AccessTokenResponse,
     parseAndValidateAccessTokenResponse,
 } from '../models/shopify/access-token-response.model.js';
+import { accessTokenEndpoint } from '../utilities/transaction-request/endpoints.utility.js';
 
 export const fetchAccessToken = async (shop: string, authCode: string) => {
     const endpoint = accessTokenEndpoint(shop, authCode);
@@ -11,11 +12,26 @@ export const fetchAccessToken = async (shop: string, authCode: string) => {
         'Content-Type': 'application/json',
         'Accept-Encoding': '',
     };
-    const response = await axios({
-        url: endpoint,
-        method: 'POST',
-        headers: headers,
-    });
+
+    let response;
+    if (process.env.NODE_ENV === 'development') {
+        const agent = new https.Agent({
+            rejectUnauthorized: false,
+        });
+
+        response = await axios({
+            url: endpoint,
+            method: 'POST',
+            headers: headers,
+            httpsAgent: agent,
+        });
+    } else {
+        response = await axios({
+            url: endpoint,
+            method: 'POST',
+            headers: headers,
+        });
+    }
 
     if (response.status != 200) {
         throw new Error('Error requesting access token.');

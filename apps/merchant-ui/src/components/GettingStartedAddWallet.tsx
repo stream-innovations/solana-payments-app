@@ -1,3 +1,4 @@
+import * as Button from '@/components/Button';
 import { updateMerchant, useMerchantStore } from '@/stores/merchantStore';
 import { PublicKey } from '@solana/web3.js';
 import { useRouter } from 'next/router';
@@ -5,7 +6,6 @@ import { useState } from 'react';
 import { twMerge } from 'tailwind-merge';
 import { AddressInput } from './AddressInput';
 import { BackButton } from './BackButton';
-import * as Button from './Button';
 import { DefaultLayoutContent } from './DefaultLayoutContent';
 import { WalletAddressSuggestion } from './WalletAddressSuggestion';
 
@@ -65,7 +65,7 @@ export function GettingStartedAddWallet(props: Props) {
                     'grid',
                     'items-start',
                     'max-w-4xl',
-                    'mt-9'
+                    'mt-9',
                 )}
             >
                 <div>
@@ -93,7 +93,7 @@ export function GettingStartedAddWallet(props: Props) {
                     'justify-end',
                     'mt-6',
                     'py-5',
-                    'space-x-3'
+                    'space-x-3',
                 )}
             >
                 <Button.Secondary onClick={() => router.back()}>Cancel</Button.Secondary>

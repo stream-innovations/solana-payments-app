@@ -1,56 +1,54 @@
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import {
     Merchant,
     PaymentRecord,
     PaymentRecordRejectionReason,
     PaymentRecordStatus,
     PrismaClient,
+    Product,
     TransactionType,
 } from '@prisma/client';
-import { TransactionRequestResponse } from '../../models/transaction-requests/transaction-request-response.model.js';
-import { fetchPaymentTransaction } from '../../services/transaction-request/fetch-payment-transaction.service.js';
-import {
-    PaymentTransactionRequestParameters,
-    parseAndValidatePaymentTransactionRequest,
-} from '../../models/transaction-requests/payment-transaction-request-parameters.model.js';
-import { encodeBufferToBase58 } from '../../utilities/transaction-request/encode-transaction.utility.js';
-import { encodeTransaction } from '../../utilities/transaction-request/encode-transaction.utility.js';
-import * as web3 from '@solana/web3.js';
-import { fetchGasKeypair } from '../../services/fetch-gas-keypair.service.js';
-import { TransactionRecordService } from '../../services/database/transaction-record-service.database.service.js';
-import { PaymentRecordService } from '../../services/database/payment-record-service.database.service.js';
-import { MerchantService } from '../../services/database/merchant-service.database.service.js';
-import { generateSingleUseKeypairFromPaymentRecord } from '../../utilities/generate-single-use-keypair.utility.js';
-import { TrmService } from '../../services/trm-service.service.js';
 import * as Sentry from '@sentry/serverless';
-import {
-    ErrorMessage,
-    ErrorType,
-    createErrorResponse,
-    errorResponse,
-} from '../../utilities/responses/error-response.utility.js';
+import * as web3 from '@solana/web3.js';
+import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import axios from 'axios';
+import { DatabaseAccessError } from '../../errors/database-access.error.js';
+import { DependencyError } from '../../errors/dependency.error.js';
+import { InvalidInputError } from '../../errors/invalid-input.error.js';
+import { MissingEnvError } from '../../errors/missing-env.error.js';
 import { RiskyWalletError } from '../../errors/risky-wallet.error.js';
+import { PaymentSessionStateRejectedReason } from '../../models/shopify-graphql-responses/shared.model.js';
+import {
+    PaymentRequestParameters,
+    parseAndValidatePaymentRequest,
+} from '../../models/transaction-requests/payment-request-parameters.model.js';
+import { parseAndValidateTransactionRequestBody } from '../../models/transaction-requests/transaction-request-body.model.js';
+import { MerchantService } from '../../services/database/merchant-service.database.service.js';
+import { PaymentRecordService } from '../../services/database/payment-record-service.database.service.js';
+import { TransactionRecordService } from '../../services/database/transaction-record-service.database.service.js';
+import { WebsocketSessionService } from '../../services/database/websocket.database.service.js';
+import { fetchGasKeypair } from '../../services/fetch-gas-keypair.service.js';
 import { makePaymentSessionReject } from '../../services/shopify/payment-session-reject.service.js';
+import { validatePaymentSessionRejected } from '../../services/shopify/validate-payment-session-rejected.service.js';
 import {
     sendPaymentRejectRetryMessage,
     sendSolanaPayInfoMessage,
 } from '../../services/sqs/sqs-send-message.service.js';
-import { validatePaymentSessionRejected } from '../../services/shopify/validate-payment-session-rejected.service.js';
-import { PaymentSessionStateRejectedReason } from '../../models/shopify-graphql-responses/shared.model.js';
-import { uploadSingleUseKeypair } from '../../services/upload-single-use-keypair.service.js';
-import { WebsocketSessionService } from '../../services/database/websocket.database.service.js';
-import { WebSocketService } from '../../services/websocket/send-websocket-message.service.js';
-import { MissingEnvError } from '../../errors/missing-env.error.js';
-import { verifyTransactionWithRecord } from '../../services/transaction-validation/validate-discovered-payment-transaction.service.js';
-import { InvalidInputError } from '../../errors/invalid-input.error.js';
-import { create } from 'lodash';
-import { MissingExpectedDatabaseRecordError } from '../../errors/missing-expected-database-record.error.js';
-import { DependencyError } from '../../errors/dependency.error.js';
+import { fetchPaymentTransaction } from '../../services/transaction-request/fetch-payment-transaction.service.js';
 import {
-    TransactionRequestBody,
-    parseAndValidateTransactionRequestBody,
-} from '../../models/transaction-requests/transaction-request-body.model.js';
+    verifyTransactionWithRecord,
+    verifyTransactionWithRecordPoints,
+} from '../../services/transaction-validation/validate-discovered-payment-transaction.service.js';
+import { TrmService } from '../../services/trm-service.service.js';
+import { uploadSingleUseKeypair } from '../../services/upload-single-use-keypair.service.js';
+import { WebSocketService } from '../../services/websocket/send-websocket-message.service.js';
+import { createCustomerResponse } from '../../utilities/clients/create-customer-response.js';
+import { createPaymentProductNftsResponse } from '../../utilities/clients/create-payment-product-nfts-response.js';
+import { generateSingleUseKeypairFromRecord } from '../../utilities/generate-single-use-keypair.utility.js';
+import { createErrorResponse } from '../../utilities/responses/error-response.utility.js';
+import {
+    encodeBufferToBase58,
+    encodeTransaction,
+} from '../../utilities/transaction-request/encode-transaction.utility.js';
 
 const prisma = new PrismaClient();
 
@@ -61,10 +59,14 @@ Sentry.AWSLambda.init({
 });
 
 export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
-    async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
-        let paymentTransaction: TransactionRequestResponse;
-        let paymentRequest: PaymentTransactionRequestParameters;
-        let transaction: web3.Transaction;
+    async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
+        Sentry.captureEvent({
+            message: 'In payment transaction handler',
+            level: 'info',
+            extra: {
+                event,
+            },
+        });
 
         const transactionRecordService = new TransactionRecordService(prisma);
         const paymentRecordService = new PaymentRecordService(prisma);
@@ -74,124 +76,49 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
         if (event.body == null) {
             return createErrorResponse(new InvalidInputError('request body'));
         }
-
-        let transactionRequestBody: TransactionRequestBody;
-
-        try {
-            transactionRequestBody = parseAndValidateTransactionRequestBody(JSON.parse(event.body));
-        } catch (error) {
-            return createErrorResponse(error);
-        }
-        const account = transactionRequestBody.account;
-
-        if (account == null) {
-            return createErrorResponse(new InvalidInputError('missing account in body'));
-        }
-
-        if (account != null) {
-            try {
-                const accountPubkey = new web3.PublicKey(account);
-            } catch (error) {
-                return createErrorResponse(new InvalidInputError('invalid account in body. needs to be a pubkey'));
-            }
-        }
-
-        try {
-            paymentRequest = parseAndValidatePaymentTransactionRequest(event.queryStringParameters);
-        } catch (error) {
-            return createErrorResponse(error);
-        }
-
-        let gasKeypair: web3.Keypair;
-
-        let paymentRecord: PaymentRecord | null;
-
-        try {
-            paymentRecord = await paymentRecordService.getPaymentRecord({
-                id: paymentRequest.paymentId,
-            });
-        } catch (error) {
-            return createErrorResponse(error);
-        }
-
-        if (paymentRecord == null) {
-            return createErrorResponse(new MissingExpectedDatabaseRecordError('payment record'));
-        }
-
         const websocketUrl = process.env.WEBSOCKET_URL;
 
         if (websocketUrl == null) {
             return createErrorResponse(new MissingEnvError('websocket url'));
         }
 
-        const websocketService = new WebSocketService(
-            websocketUrl,
-            {
-                paymentRecordId: paymentRecord.id,
-            },
-            websocketSessionService
-        );
-
-        await websocketService.sendTransacationRequestStartedMessage();
-
-        await sendSolanaPayInfoMessage(account, paymentRecord.id);
+        let paymentRecord: PaymentRecord;
+        let account: string;
+        let merchant: Merchant;
+        let websocketService;
+        let gasKeypair: web3.Keypair;
+        let singleUseKeypair: web3.Keypair;
+        let paymentRequest: PaymentRequestParameters;
+        let products: Product[];
 
         try {
-            gasKeypair = await fetchGasKeypair();
-        } catch (error) {
-            console.log('no gas');
-            await websocketService.sendTransactionRequestFailedMessage();
-            return createErrorResponse(error);
-        }
+            let transactionRequestBody = parseAndValidateTransactionRequestBody(JSON.parse(event.body));
+            account = transactionRequestBody.account;
 
-        let merchant: Merchant | null;
+            paymentRequest = parseAndValidatePaymentRequest(event.queryStringParameters);
 
-        try {
+            paymentRecord = await paymentRecordService.getPaymentRecord({
+                id: paymentRequest.paymentId,
+            });
             merchant = await merchantService.getMerchant({
                 id: paymentRecord.merchantId,
             });
-        } catch (error) {
-            console.log('failed fetching merchant');
-            await websocketService.sendTransactionRequestFailedMessage();
-            return createErrorResponse(error);
-        }
 
-        if (merchant == null) {
-            console.log('no merchant');
-            await websocketService.sendTransactionRequestFailedMessage();
-            return createErrorResponse(new MissingExpectedDatabaseRecordError('merchant'));
-        }
+            if (merchant.accessToken == null) {
+                throw new DatabaseAccessError('missing access token');
+            }
 
-        if (merchant.accessToken == null) {
-            await websocketService.sendTransactionRequestFailedMessage();
-            console.log('no access token');
-            return createErrorResponse(new MissingExpectedDatabaseRecordError('merchant access token'));
-        }
-
-        const singleUseKeypair = await generateSingleUseKeypairFromPaymentRecord(paymentRecord);
-
-        try {
-            await uploadSingleUseKeypair(singleUseKeypair, paymentRecord);
-        } catch (error) {
-            console.log(error);
-            Sentry.captureException(error);
-            // CRITIAL: This should work, but losing the rent here isn't the end of the world but we want to know
-        }
-
-        try {
-            paymentTransaction = await fetchPaymentTransaction(
-                paymentRecord,
-                merchant,
-                account,
-                gasKeypair.publicKey.toBase58(),
-                singleUseKeypair.publicKey.toBase58(),
-                gasKeypair.publicKey.toBase58(),
-                axios
+            websocketService = new WebSocketService(
+                websocketUrl,
+                {
+                    paymentRecordId: paymentRecord.id,
+                },
+                websocketSessionService
             );
+
+            await websocketService.sendTransacationRequestStartedMessage();
+            await sendSolanaPayInfoMessage(account, paymentRecord.id);
         } catch (error) {
-            console.log(error);
-            console.log('failed fetching payment transaction, prob lol');
-            await websocketService.sendTransactionRequestFailedMessage();
             return createErrorResponse(error);
         }
 
@@ -256,59 +183,66 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
         }
 
         try {
-            transaction = encodeTransaction(paymentTransaction.transaction);
-        } catch (error) {
-            await websocketService.sendTransactionRequestFailedMessage();
-            return createErrorResponse(error);
-        }
+            const productResponse = await createPaymentProductNftsResponse(paymentRecord, merchantService);
 
-        transaction.partialSign(gasKeypair);
+            singleUseKeypair = await generateSingleUseKeypairFromRecord(paymentRecord);
+            try {
+                await uploadSingleUseKeypair(singleUseKeypair, paymentRecord);
+            } catch (error) {
+                Sentry.captureException(error);
+            }
+            gasKeypair = await fetchGasKeypair();
 
-        try {
-            verifyTransactionWithRecord(paymentRecord, transaction, true);
-        } catch (error) {
-            console.log(error);
-            return createErrorResponse(error);
-        }
+            const customerResponse = await createCustomerResponse(account, paymentRecord, merchantService);
+            let paymentTransaction = await fetchPaymentTransaction(
+                paymentRecord,
+                merchant,
+                account,
+                gasKeypair.publicKey.toBase58(),
+                singleUseKeypair.publicKey.toBase58(),
+                gasKeypair.publicKey.toBase58(),
+                paymentRequest.payWithPoints,
+                customerResponse
+            );
 
-        const transactionSignature = transaction.signature;
+            let transaction = encodeTransaction(paymentTransaction.transaction);
+            transaction.partialSign(gasKeypair);
+            if (paymentRequest.payWithPoints) {
+                verifyTransactionWithRecordPoints(paymentRecord, transaction, true);
+            } else {
+                verifyTransactionWithRecord(paymentRecord, transaction, true);
+            }
 
-        if (transactionSignature == null) {
-            await websocketService.sendTransactionRequestFailedMessage();
-            return createErrorResponse(new DependencyError('transaction signature'));
-        }
+            const transactionSignature = transaction.signature;
+            if (transactionSignature == null) {
+                throw new DependencyError('transaction signature');
+            }
 
-        const signatureBuffer = transactionSignature;
-
-        const signatureString = encodeBufferToBase58(signatureBuffer);
-
-        try {
             await transactionRecordService.createTransactionRecord(
-                signatureString,
+                encodeBufferToBase58(transactionSignature),
                 TransactionType.payment,
                 paymentRecord.id,
-                null
+                null,
+                paymentRequest.payWithPoints
             );
+            const transactionBuffer = transaction.serialize({
+                verifySignatures: false,
+                requireAllSignatures: false,
+            });
+
+            await websocketService.sendTransactionDeliveredMessage();
+
+            return {
+                statusCode: 200,
+                body: JSON.stringify({
+                    transaction: transactionBuffer.toString('base64'),
+                    message: `Paying ${merchant.name} ${paymentRecord.usdcAmount.toFixed(6)} USDC`,
+                }),
+            };
         } catch (error) {
             await websocketService.sendTransactionRequestFailedMessage();
             return createErrorResponse(error);
         }
-
-        const transactionBuffer = transaction.serialize({
-            verifySignatures: false,
-            requireAllSignatures: false,
-        });
-        const transactionString = transactionBuffer.toString('base64');
-
-        await websocketService.sendTransactionDeliveredMessage();
-
-        return {
-            statusCode: 200,
-            body: JSON.stringify({
-                transaction: transactionString,
-                message: `Paying ${merchant.name} ${paymentRecord.usdcAmount.toFixed(6)} USDC`,
-            }),
-        };
     },
     {
         captureTimeoutWarning: false,
@@ -316,7 +250,7 @@ export const paymentTransaction = Sentry.AWSLambda.wrapHandler(
     }
 );
 
-export const paymentMetadata = async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+export const paymentMetadata = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
     return {
         statusCode: 200,
         body: JSON.stringify({

@@ -1,18 +1,14 @@
-import axios from 'axios';
-import { buildRefundTransactionRequestEndpoint } from '../../utilities/transaction-request/endpoints.utility.js';
 import { PaymentRecord, RefundRecord } from '@prisma/client';
+import axios from 'axios';
+import { USDC_MINT } from '../../configs/tokens.config.js';
 import {
     TransactionRequestResponse,
     parseAndValidateTransactionRequestResponse,
 } from '../../models/transaction-requests/transaction-request-response.model.js';
+import { delay } from '../../utilities/delay.utility.js';
+import { findPayingTokenAddressFromTransaction } from '../../utilities/transaction-inspection.utility.js';
+import { buildRefundTransactionRequestEndpoint } from '../../utilities/transaction-request/endpoints.utility.js';
 import { fetchTransaction } from '../fetch-transaction.service.js';
-import {
-    findPayingTokenAddressFromTransaction,
-    findPayingWalletFromTransaction,
-} from '../../utilities/transaction-inspection.utility.js';
-import { USDC_MINT } from '../../configs/tokens.config.js';
-import { ref } from 'yup';
-import { send } from 'process';
 
 export const fetchRefundTransaction = async (
     refundRecord: RefundRecord,
@@ -32,10 +28,15 @@ export const fetchRefundTransaction = async (
     // This is also something we could add to a job with sqs to save calls here and then make
     // it easier to populate on merchant-ui read calls
     // TODO: Figure out if we need to direct it to the exact token account of the customer, probably yes
-    const transaction = await fetchTransaction(associatedPaymentRecord.transactionSignature);
+
+    let transaction;
+
+    while (transaction == null) {
+        await delay(1000);
+        transaction = await fetchTransaction(associatedPaymentRecord.transactionSignature);
+    }
     const payingCustomerTokenAddress = await findPayingTokenAddressFromTransaction(transaction);
 
-    let senderWalletAddress = account;
     let receiverWalletAddress: string | null = null;
     let receiverTokenAddress: string | null = payingCustomerTokenAddress.toBase58();
 
@@ -47,7 +48,7 @@ export const fetchRefundTransaction = async (
     const endpoint = buildRefundTransactionRequestEndpoint(
         receiverWalletAddress,
         receiverTokenAddress,
-        senderWalletAddress,
+        account,
         USDC_MINT.toBase58(),
         USDC_MINT.toBase58(),
         gas,
@@ -63,20 +64,13 @@ export const fetchRefundTransaction = async (
         'Content-Type': 'application/json',
     };
 
-    console.log(endpoint);
-
-    const response = await axiosInstance.post(endpoint, { account: account }, { headers: headers });
-
-    console.log(response.status);
+    const response = await axiosInstance.post(endpoint, { headers: headers });
 
     if (response.status != 200) {
         throw new Error('Error fetching refund transaction.');
     }
 
-    console.log(response.status);
-
     const transactionRequestResponse = parseAndValidateTransactionRequestResponse(response.data);
 
-    console.log(transactionRequestResponse);
     return transactionRequestResponse;
 };

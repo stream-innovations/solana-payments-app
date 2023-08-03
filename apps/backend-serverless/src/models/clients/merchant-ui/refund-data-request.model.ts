@@ -1,8 +1,15 @@
-import { object, InferType, number, string } from 'yup';
-import { parseAndValidate } from '../../../utilities/yup.utility.js';
-import { DEFAULT_PAGINATION_SIZE } from '../../../utilities/clients/merchant-ui/database-services.utility.js';
-import { RefundRecordStatus } from '@prisma/client';
-import { RefundStatusOption } from '../../../utilities/clients/merchant-ui/create-refund-response.utility.js';
+import { InferType, number, object, string } from 'yup';
+import { RefundStatusOption } from '../../../utilities/clients/create-refund-response.utility.js';
+import { DEFAULT_PAGINATION_SIZE } from '../../../utilities/clients/database-services.utility.js';
+import { parseAndValidateStrict } from '../../../utilities/yup.utility.js';
+
+const parseParameters = params => {
+    return {
+        pageNumber: parseInt(params.pageNumber),
+        pageSize: parseInt(params.pageSize),
+        refundStatus: params.refundStatus,
+    };
+};
 
 export const refundDataRequestParametersSchema = object().shape({
     pageNumber: number().min(1).default(1),
@@ -15,8 +22,8 @@ export type RefundDataRequestParameters = InferType<typeof refundDataRequestPara
 export const parseAndValidateRefundDataRequestParameters = (
     refundDataRequestParmatersBody: unknown
 ): RefundDataRequestParameters => {
-    return parseAndValidate(
-        refundDataRequestParmatersBody,
+    return parseAndValidateStrict(
+        parseParameters(refundDataRequestParmatersBody),
         refundDataRequestParametersSchema,
         'Could not parse the refund data request parameters. Unknown Reason.'
     );

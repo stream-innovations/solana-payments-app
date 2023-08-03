@@ -1,13 +1,12 @@
-import * as web3 from '@solana/web3.js';
-import { fetchHeliusBalance } from '../services/helius.service.js';
-import { MissingEnvError } from '../errors/missing-env.error.js';
 import { TOKEN_PROGRAM_ID, createCloseAccountInstruction } from '@solana/spl-token';
-import { findAssociatedTokenAddress } from './pubkeys.utility.js';
+import * as web3 from '@solana/web3.js';
 import { USDC_MINT } from '../configs/tokens.config.js';
+import { MissingEnvError } from '../errors/missing-env.error.js';
+import { findAssociatedTokenAddress } from './pubkeys.utility.js';
 
 export const createSweepingTransaction = async (
     sendingKeypair: web3.PublicKey,
-    receivingKeypair: web3.PublicKey
+    receivingKeypair: web3.PublicKey,
 ): Promise<web3.Transaction> => {
     const heliusApiKey = process.env.HELIUS_API_KEY;
 

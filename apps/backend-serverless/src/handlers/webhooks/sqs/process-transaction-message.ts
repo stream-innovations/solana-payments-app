@@ -1,17 +1,16 @@
+import { PrismaClient } from '@prisma/client';
 import * as Sentry from '@sentry/serverless';
 import { APIGatewayProxyResultV2, SQSEvent } from 'aws-lambda';
-import { startExecutionOfShopifyMutationRetry } from '../../../services/step-function/start-execution-shopify-retry.service.js';
+import axios from 'axios';
+import { MissingEnvError } from '../../../errors/missing-env.error.js';
 import {
     ProcessTransactionMessage,
     parseAndValidateProcessTransactionMessage,
 } from '../../../models/sqs/process-transaction-message.model.js';
-import { WebSocketService } from '../../../services/websocket/send-websocket-message.service.js';
-import { MissingEnvError } from '../../../errors/missing-env.error.js';
-import { createErrorResponse } from '../../../utilities/responses/error-response.utility.js';
-import { PaymentRecordService } from '../../../services/database/payment-record-service.database.service.js';
-import { PrismaClient } from '@prisma/client';
 import { processTransaction } from '../../../services/business-logic/process-transaction.service.js';
-import axios from 'axios';
+import { PaymentRecordService } from '../../../services/database/payment-record-service.database.service.js';
+import { WebSocketService } from '../../../services/websocket/send-websocket-message.service.js';
+import { createErrorResponse } from '../../../utilities/responses/error-response.utility.js';
 
 const prisma = new PrismaClient();
 
@@ -23,22 +22,22 @@ Sentry.AWSLambda.init({
 
 export const processTransactionMessage = Sentry.AWSLambda.wrapHandler(
     async (event: SQSEvent): Promise<APIGatewayProxyResultV2> => {
+        Sentry.captureEvent({
+            message: 'in process-transaction-message',
+            level: 'info',
+        });
         const websocketUrl = process.env.WEBSOCKET_URL;
 
         const paymentRecordService = new PaymentRecordService(prisma);
 
         if (websocketUrl == null) {
-            const error = new MissingEnvError('websocket url');
-            Sentry.captureException(error);
             return createErrorResponse(new MissingEnvError('websocket url'));
         }
 
-        let failedProcessingRecords: ProcessTransactionMessage[] = [];
+        const failedProcessingRecords: ProcessTransactionMessage[] = [];
 
         // We have this configured for a batch of one, we look just in case but this should only return once
         for (const record of event.Records) {
-            console.log(record);
-
             const processTransactionMessageBody = JSON.parse(record.body);
 
             let processTransactionMessage: ProcessTransactionMessage;
@@ -46,7 +45,6 @@ export const processTransactionMessage = Sentry.AWSLambda.wrapHandler(
             try {
                 processTransactionMessage = parseAndValidateProcessTransactionMessage(processTransactionMessageBody);
             } catch (error) {
-                console.log(error);
                 Sentry.captureException(error);
                 failedProcessingRecords.push(processTransactionMessageBody);
                 // How can we make this single one retry? We can set the batch to 0 so this doesnt happen for now.
@@ -58,7 +56,7 @@ export const processTransactionMessage = Sentry.AWSLambda.wrapHandler(
                 {
                     signatures: [processTransactionMessage.signature],
                 },
-                paymentRecordService
+                paymentRecordService,
             );
 
             try {
@@ -72,11 +70,11 @@ export const processTransactionMessage = Sentry.AWSLambda.wrapHandler(
         return {
             statusCode: 200,
             body: JSON.stringify({
-                message: 'Successfully process transaction.',
+                message: 'Successfully processed transaction.',
             }),
         };
     },
     {
         rethrowAfterCapture: false,
-    }
+    },
 );

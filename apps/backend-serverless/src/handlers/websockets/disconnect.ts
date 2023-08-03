@@ -1,10 +1,6 @@
-import * as Sentry from '@sentry/serverless';
-import {
-    APIGatewayProxyResultV2,
-    APIGatewayProxyWebsocketEventV2,
-    APIGatewayProxyWebsocketHandlerV2,
-} from 'aws-lambda';
 import { PrismaClient } from '@prisma/client';
+import * as Sentry from '@sentry/serverless';
+import { APIGatewayProxyResultV2, APIGatewayProxyWebsocketEventV2 } from 'aws-lambda';
 import { WebsocketSessionService } from '../../services/database/websocket.database.service.js';
 
 const prisma = new PrismaClient();
@@ -17,7 +13,10 @@ Sentry.AWSLambda.init({
 
 export const disconnect = Sentry.AWSLambda.wrapHandler(
     async (event: APIGatewayProxyWebsocketEventV2): Promise<APIGatewayProxyResultV2> => {
-        console.log('GOODBYE WEBSOCKET');
+        Sentry.captureEvent({
+            message: 'in websocket disconnect',
+            level: 'info',
+        });
 
         const websocketSessionService = new WebsocketSessionService(prisma);
 
@@ -32,5 +31,5 @@ export const disconnect = Sentry.AWSLambda.wrapHandler(
     },
     {
         rethrowAfterCapture: false,
-    }
+    },
 );

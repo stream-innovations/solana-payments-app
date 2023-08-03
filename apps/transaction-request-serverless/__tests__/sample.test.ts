@@ -1,8 +1,7 @@
-import * as web3 from '@solana/web3.js';
 import * as token from '@solana/spl-token';
+import * as web3 from '@solana/web3.js';
 import { USDC_PUBKEY } from '../src/configs/pubkeys.config.js';
-import { getMinimumBalanceForRentExemptMint, MINT_SIZE } from '@solana/spl-token';
-import { findAssociatedTokenAddress } from '../src/utils/ata.util.js';
+import { findAssociatedTokenAddress } from '../src/utilities/ata.utility.js';
 
 describe('Sample test', () => {
     beforeEach((): void => {
@@ -24,7 +23,7 @@ describe('Sample test', () => {
     it('create a mint.', async () => {
         const connection = new web3.Connection('https://rpc.helius.xyz/?api-key=5f70b753-57cb-422b-a018-d7df67b4470e');
         const blockhash = await connection.getLatestBlockhash();
-        let tx = new web3.Transaction({
+        const tx = new web3.Transaction({
             feePayer: keypair.publicKey,
             blockhash: blockhash.blockhash,
             lastValidBlockHeight: blockhash.lastValidBlockHeight,
@@ -40,7 +39,7 @@ describe('Sample test', () => {
             {
                 skipPreflight: true,
                 commitment: 'confirmed',
-            }
+            },
         );
 
         console.log(mintPubkey.toBase58());
@@ -91,7 +90,7 @@ describe('Sample test', () => {
     it('create token account.', async () => {
         const random = await web3.PublicKey.findProgramAddressSync(
             [keypair.publicKey.toBuffer(), token.TOKEN_PROGRAM_ID.toBuffer(), mintPubkey!.toBuffer()],
-            token.TOKEN_PROGRAM_ID
+            token.TOKEN_PROGRAM_ID,
         );
         tokenAccount = random[0];
 
@@ -101,7 +100,7 @@ describe('Sample test', () => {
 
         const connection = new web3.Connection('https://rpc.helius.xyz/?api-key=5f70b753-57cb-422b-a018-d7df67b4470e');
         const blockhash = await connection.getLatestBlockhash();
-        let tx = new web3.Transaction({
+        const tx = new web3.Transaction({
             feePayer: keypair.publicKey,
             blockhash: blockhash.blockhash,
             lastValidBlockHeight: blockhash.lastValidBlockHeight,
@@ -112,8 +111,8 @@ describe('Sample test', () => {
                 newGuy.publicKey,
                 USDC_PUBKEY,
                 token.TOKEN_PROGRAM_ID,
-                token.ASSOCIATED_TOKEN_PROGRAM_ID
-            )
+                token.ASSOCIATED_TOKEN_PROGRAM_ID,
+            ),
         );
 
         tx.partialSign(keypair);
@@ -135,13 +134,13 @@ describe('Sample test', () => {
         const blockhash = await connection.getLatestBlockhash();
         const ata = await findAssociatedTokenAddress(newGuy!.publicKey, USDC_PUBKEY!);
 
-        let tx = new web3.Transaction({
+        const tx = new web3.Transaction({
             feePayer: keypair.publicKey,
             blockhash: blockhash.blockhash,
             lastValidBlockHeight: blockhash.lastValidBlockHeight,
         }).add(
             // create mint account
-            token.createCloseAccountInstruction(ata, keypair.publicKey, newGuy!.publicKey, [], token.TOKEN_PROGRAM_ID)
+            token.createCloseAccountInstruction(ata, keypair.publicKey, newGuy!.publicKey, [], token.TOKEN_PROGRAM_ID),
         );
 
         tx.partialSign(newGuy!);

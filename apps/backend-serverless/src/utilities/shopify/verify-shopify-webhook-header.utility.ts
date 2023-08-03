@@ -1,18 +1,16 @@
-import * as crypto from 'crypto-js';
+import crypto from 'crypto';
 import { MissingEnvError } from '../../errors/missing-env.error.js';
 import { UnauthorizedRequestError } from '../../errors/unauthorized-request.error.js';
 
-export const verifyShopifyWebhook = (data: string, hmacHeader: string) => {
-    const shopifySecret = process.env.SHOPIFY_SECRET;
+export const verifyShopifyWebhook = (data: Buffer, hmacHeader: string) => {
+    const shopifySecret = process.env.SHOPIFY_SECRET_KEY;
 
     if (shopifySecret == null) {
-        throw new MissingEnvError('shopify secret');
+        throw new MissingEnvError('Missing shopify secret');
     }
+    const hmac = crypto.createHmac('sha256', shopifySecret).update(data).digest('base64');
 
-    const hash = crypto.HmacSHA256(data, shopifySecret);
-    const hmac = crypto.enc.Base64.stringify(hash);
-
-    if (hmac !== hmacHeader) {
-        throw new UnauthorizedRequestError('invalid hmac');
+    if (hmac !== hmacHeader && process.env.NODE_ENV !== 'development') {
+        throw new UnauthorizedRequestError('Invalid Hmac');
     }
 };

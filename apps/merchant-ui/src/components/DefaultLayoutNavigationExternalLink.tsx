@@ -1,8 +1,6 @@
+import * as NavigationMenu from '@radix-ui/react-navigation-menu';
 import { cloneElement } from 'react';
 import { twMerge } from 'tailwind-merge';
-import * as NavigationMenu from '@radix-ui/react-navigation-menu';
-
-import { OpenInNew } from './icons/OpenInNew';
 
 interface Props {
     className?: string;
@@ -17,7 +15,6 @@ export function DefaultLayoutNavigationExternalLink(props: Props) {
             <NavigationMenu.Link
                 className={twMerge(
                     'gap-x-3',
-                    'gap-x-4',
                     'group',
                     'grid-cols-[24px,1fr,max-content]',
                     'grid',
@@ -25,7 +22,7 @@ export function DefaultLayoutNavigationExternalLink(props: Props) {
                     'px-3',
                     'py-2',
                     'rounded-md',
-                    'transition-colors'
+                    'transition-colors',
                 )}
                 href={props.href}
                 target="_blank"
@@ -34,7 +31,7 @@ export function DefaultLayoutNavigationExternalLink(props: Props) {
                     className: twMerge('fill-slate-400', 'h-6', 'transition-colors', 'w-6', props.icon.props.className),
                 })}
                 <div className="transition-all group-hover:font-semibold">{props.text}</div>
-                <OpenInNew className="fill-indigo-500 h-6 w-6" />
+                {/* <OpenInNew className="fill-indigo-500 h-6 w-6" /> */}
             </NavigationMenu.Link>
         </NavigationMenu.Item>
     );

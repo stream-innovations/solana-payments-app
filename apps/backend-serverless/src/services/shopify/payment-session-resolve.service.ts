@@ -1,11 +1,12 @@
+import * as Sentry from '@sentry/node';
 import axios from 'axios';
+import https from 'https';
 import { shopifyGraphQLEndpoint } from '../../configs/endpoints.config.js';
+import { ShopifyResponseError } from '../../errors/shopify-response.error.js';
 import {
     ResolvePaymentResponse,
     parseAndValidateResolvePaymentResponse,
 } from '../../models/shopify-graphql-responses/resolve-payment-response.model.js';
-import { ShopifyResponseError } from '../../errors/shopify-response.error.js';
-import * as Sentry from '@sentry/node';
 
 const paymentSessionResolveMutation = `mutation PaymentSessionResolve($id: ID!) {
     paymentSessionResolve(id: $id) {
@@ -49,13 +50,28 @@ export const makePaymentSessionResolve = (axiosInstance: typeof axios) => {
 
         let resolvePaymentResponse: ResolvePaymentResponse;
 
+        let response;
         try {
-            const response = await axiosInstance({
-                url: shopifyGraphQLEndpoint(shop),
-                method: 'POST',
-                headers: headers,
-                data: JSON.stringify(graphqlQuery),
-            });
+            if (process.env.NODE_ENV === 'development') {
+                const agent = new https.Agent({
+                    rejectUnauthorized: false,
+                });
+
+                response = await axios({
+                    url: shopifyGraphQLEndpoint(shop),
+                    method: 'POST',
+                    headers: headers,
+                    data: JSON.stringify(graphqlQuery),
+                    httpsAgent: agent,
+                });
+            } else {
+                response = await axios({
+                    url: shopifyGraphQLEndpoint(shop),
+                    method: 'POST',
+                    headers: headers,
+                    data: JSON.stringify(graphqlQuery),
+                });
+            }
 
             // TODO: For all of these graphql requests, check for the specific error codes here
             // https://shopify.dev/docs/api/payments-apps#status_and_error_codes
@@ -69,10 +85,9 @@ export const makePaymentSessionResolve = (axiosInstance: typeof axios) => {
                     resolvePaymentResponse = parseAndValidateResolvePaymentResponse(response.data);
                     break;
                 default:
-                    const shopifyResponseError = new ShopifyResponseError(
+                    throw new ShopifyResponseError(
                         'non successful status code ' + response.status + '. data: ' + JSON.stringify(response.data)
                     );
-                    throw shopifyResponseError;
             }
         } catch (error) {
             console.log(error);

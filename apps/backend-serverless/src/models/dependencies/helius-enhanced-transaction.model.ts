@@ -1,5 +1,5 @@
-import { object, string, InferType, number, array } from 'yup';
-import { parseAndValidate } from '../../utilities/yup.utility.js';
+import { InferType, array, number, object, string } from 'yup';
+import { parseAndValidateStrict } from '../../utilities/yup.utility.js';
 export const heliusRawTokenAmountSchema = object().shape({
     tokenAmount: string().optional(),
     decimals: number().optional(),
@@ -84,10 +84,10 @@ export const heliusTransactionErrorSchema = object()
     .nullable();
 
 export const heliusTokenBalanceChangeSchema = object().shape({
-    userAccount: string().optional(),
-    tokenAccount: string().optional(),
     mint: string().optional(),
     rawTokenAmount: heliusRawTokenAmountSchema.optional(),
+    tokenAccount: string().optional(),
+    userAccount: string().optional(),
 });
 
 export const heliusAccountTransferSchema = object().shape({
@@ -103,6 +103,7 @@ export const heliusTokenTransferSchema = object().shape({
     toTokenAccount: string().optional(),
     tokenAmount: number().optional(),
     mint: string().optional(),
+    tokenStandard: string().optional(),
 });
 
 export const heliusNativeTransferSchema = object().shape({
@@ -115,7 +116,7 @@ export const heliusEnhancedTransactionModelSchema = object().shape({
     description: string().optional(),
     type: string().optional(),
     source: string().optional(),
-    fee: string().optional(),
+    fee: number().optional(),
     feePayer: string().optional(),
     signature: string().required(),
     slot: number().optional(),
@@ -134,11 +135,11 @@ export type HeliusEnhancedTransaction = InferType<typeof heliusEnhancedTransacti
 export type HeliusEnhancedTransactionArray = InferType<typeof heliusEnhancedTransactionResponseSchema>;
 
 export const parseAndValidateHeliusEnchancedTransaction = (
-    heliusEnhancedTransactionResponseBody: unknown
+    heliusEnhancedTransactionResponseBody: unknown,
 ): HeliusEnhancedTransactionArray => {
-    return parseAndValidate(
+    return parseAndValidateStrict(
         heliusEnhancedTransactionResponseBody,
         heliusEnhancedTransactionResponseSchema,
-        'Could not parse the heluis enhanced transaction body. Unknown Reason.'
+        'Could not parse the heluis enhanced transaction body. Unknown Reason.',
     );
 };

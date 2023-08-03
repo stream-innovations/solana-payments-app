@@ -1,5 +1,5 @@
-import { APIGatewayProxyResultV2, APIGatewayProxyEventV2 } from 'aws-lambda';
-import crypto from 'crypto-js';
+import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import crypto from 'crypto';
 
 export const stringifyParams = (params: { [key: string]: string }): string => {
     return Object.keys(params)
@@ -8,26 +8,18 @@ export const stringifyParams = (params: { [key: string]: string }): string => {
 };
 
 export const install = async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
-    const mockShopifySecret = 'MOCK_SHOPIFY_SECRET';
-
-    console.log('HELLO TEEJ');
-    console.log('HELLO TEEJ');
-    console.log('HELLO TEEJ');
-    console.log('HELLO TEEJ');
-    console.log('HELLO TEEJ');
-    console.log('HELLO TEEJ');
-    console.log('HELLO TEEJ');
-    console.log('HELLO TEEJ');
+    const mockShopifySecret = process.env.MOCK_SHOPIFY_SECRET_KEY!;
 
     const installParams = {
-        host: 'LETSGOPANTHERS',
+        host: 'testhost',
         shop: 'localhost:4004',
         timestamp: 'timestamp',
     };
 
-    const stringifiedParams = stringifyParams(installParams);
-    const hmac = crypto.HmacSHA256(stringifiedParams, mockShopifySecret);
-
+    const hmac = crypto
+        .createHmac('sha256', mockShopifySecret)
+        .update(Buffer.from(stringifyParams(installParams)))
+        .digest('hex');
     const hmacString = hmac.toString();
 
     return {

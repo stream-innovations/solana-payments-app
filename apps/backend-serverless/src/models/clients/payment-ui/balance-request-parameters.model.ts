@@ -1,14 +1,16 @@
-import { object, string, InferType } from 'yup';
-import { parseAndValidate } from '../../../utilities/yup.utility.js';
+import { InferType, object } from 'yup';
+import { parseAndValidateStrict } from '../../../utilities/yup.utility.js';
+import { publicKeySchema } from '../../public-key-schema.model.js';
 
 export const balanceRequestParametersScheme = object().shape({
-    pubkey: string().required(),
+    publicKey: publicKeySchema.required(),
+    mint: publicKeySchema.required(),
 });
 
 export type BalanceRequestParameters = InferType<typeof balanceRequestParametersScheme>;
 
 export const parseAndValidateBalanceParameters = (balanceRequestParameters: unknown): BalanceRequestParameters => {
-    return parseAndValidate(
+    return parseAndValidateStrict(
         balanceRequestParameters,
         balanceRequestParametersScheme,
         'Can not parse balance parameters. Unkownn reason.'

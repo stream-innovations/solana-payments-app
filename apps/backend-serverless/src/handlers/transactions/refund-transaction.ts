@@ -1,39 +1,28 @@
-import * as Sentry from '@sentry/serverless';
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
 import { Merchant, PaymentRecord, PrismaClient, RefundRecord, TransactionType } from '@prisma/client';
-import { fetchGasKeypair } from '../../services/fetch-gas-keypair.service.js';
+import * as Sentry from '@sentry/serverless';
+import * as web3 from '@solana/web3.js';
+import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
+import axios from 'axios';
+import { DependencyError } from '../../errors/dependency.error.js';
+import { InvalidInputError } from '../../errors/invalid-input.error.js';
 import {
     RefundTransactionRequest,
     parseAndValidateRefundTransactionRequest,
 } from '../../models/transaction-requests/refund-transaction-request.model.js';
-import * as web3 from '@solana/web3.js';
-import { TransactionRequestResponse } from '../../models/transaction-requests/transaction-request-response.model.js';
+import { parseAndValidateTransactionRequestBody } from '../../models/transaction-requests/transaction-request-body.model.js';
+import { MerchantService } from '../../services/database/merchant-service.database.service.js';
+import { RefundRecordService } from '../../services/database/refund-record-service.database.service.js';
+import { TransactionRecordService } from '../../services/database/transaction-record-service.database.service.js';
+import { fetchGasKeypair } from '../../services/fetch-gas-keypair.service.js';
+import { fetchRefundTransaction } from '../../services/transaction-request/fetch-refund-transaction.service.js';
+import { verifyTransactionWithRecord } from '../../services/transaction-validation/validate-discovered-payment-transaction.service.js';
+import { TrmService } from '../../services/trm-service.service.js';
+import { generateSingleUseKeypairFromRecord } from '../../utilities/generate-single-use-keypair.utility.js';
+import { createErrorResponse } from '../../utilities/responses/error-response.utility.js';
 import {
     encodeBufferToBase58,
     encodeTransaction,
 } from '../../utilities/transaction-request/encode-transaction.utility.js';
-import { fetchRefundTransaction } from '../../services/transaction-request/fetch-refund-transaction.service.js';
-import { TransactionRecordService } from '../../services/database/transaction-record-service.database.service.js';
-import { RefundRecordService } from '../../services/database/refund-record-service.database.service.js';
-import { TrmService } from '../../services/trm-service.service.js';
-import { generateSingleUseKeypairFromRefundRecord } from '../../utilities/generate-single-use-keypair.utility.js';
-import { MerchantService } from '../../services/database/merchant-service.database.service.js';
-import {
-    ErrorMessage,
-    ErrorType,
-    createErrorResponse,
-    errorResponse,
-} from '../../utilities/responses/error-response.utility.js';
-import axios from 'axios';
-import { verifyTransactionWithRecord } from '../../services/transaction-validation/validate-discovered-payment-transaction.service.js';
-import { InvalidInputError } from '../../errors/invalid-input.error.js';
-import { create } from 'lodash';
-import { MissingExpectedDatabaseRecordError } from '../../errors/missing-expected-database-record.error.js';
-import { DependencyError } from '../../errors/dependency.error.js';
-import {
-    TransactionRequestBody,
-    parseAndValidateTransactionRequestBody,
-} from '../../models/transaction-requests/transaction-request-body.model.js';
 
 const prisma = new PrismaClient();
 
@@ -44,10 +33,15 @@ Sentry.AWSLambda.init({
 });
 
 export const refundTransaction = Sentry.AWSLambda.wrapHandler(
-    async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+    async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
+        Sentry.captureEvent({
+            message: 'in refund-transaction',
+            level: 'info',
+            extra: {
+                event,
+            },
+        });
         let refundRequest: RefundTransactionRequest;
-        let refundTransaction: TransactionRequestResponse;
-        let transaction: web3.Transaction;
 
         const transactionRecordService = new TransactionRecordService(prisma);
         const refundRecordService = new RefundRecordService(prisma);
@@ -59,70 +53,22 @@ export const refundTransaction = Sentry.AWSLambda.wrapHandler(
             return createErrorResponse(new InvalidInputError('request body'));
         }
 
-        const body = JSON.parse(event.body);
-
-        let transactionRequestBody: TransactionRequestBody;
-
-        try {
-            transactionRequestBody = parseAndValidateTransactionRequestBody(JSON.parse(event.body));
-        } catch (error) {
-            return createErrorResponse(error);
-        }
-        const account = transactionRequestBody.account;
-
-        if (account == null) {
-            return createErrorResponse(new InvalidInputError('account is missing from body'));
-        }
-
-        try {
-            new web3.PublicKey(account);
-        } catch (error) {
-            return createErrorResponse(new InvalidInputError('account is not a valid public key'));
-        }
-
-        try {
-            refundRequest = parseAndValidateRefundTransactionRequest(event.queryStringParameters);
-        } catch (error) {
-            return errorResponse(ErrorType.badRequest, ErrorMessage.invalidRequestParameters);
-        }
-
+        let account: string;
         let gasKeypair: web3.Keypair;
-
-        try {
-            gasKeypair = await fetchGasKeypair();
-        } catch (error) {
-            return createErrorResponse(error);
-        }
-
-        let refundRecord: RefundRecord | null;
-
-        try {
-            refundRecord = await refundRecordService.getRefundRecord({
-                shopId: refundRequest.refundId,
-            });
-        } catch (error) {
-            return createErrorResponse(error);
-        }
-
-        if (refundRecord == null) {
-            return createErrorResponse(new MissingExpectedDatabaseRecordError('refund record'));
-        }
-
-        let paymentRecord: PaymentRecord | null;
-
-        try {
-            paymentRecord = await refundRecordService.getPaymentRecordForRefund({ id: refundRecord.id });
-        } catch (error) {
-            return createErrorResponse(error);
-        }
-
-        if (paymentRecord == null) {
-            return createErrorResponse(new MissingExpectedDatabaseRecordError('payment record'));
-        }
-
+        let refundRecord: RefundRecord;
+        let paymentRecord: PaymentRecord;
         let merchant: Merchant | null;
 
         try {
+            let transactionRequestBody = parseAndValidateTransactionRequestBody(JSON.parse(event.body));
+            account = transactionRequestBody.account;
+
+            refundRequest = parseAndValidateRefundTransactionRequest(event.queryStringParameters);
+
+            refundRecord = await refundRecordService.getRefundRecord({
+                shopId: refundRequest.refundId,
+            });
+            paymentRecord = await refundRecordService.getPaymentRecordForRefund({ id: refundRecord.id });
             merchant = await merchantService.getMerchant({
                 id: refundRecord.merchantId,
             });
@@ -130,14 +76,22 @@ export const refundTransaction = Sentry.AWSLambda.wrapHandler(
             return createErrorResponse(error);
         }
 
-        if (merchant == null) {
-            return createErrorResponse(new MissingExpectedDatabaseRecordError('merchant'));
+        // We're gonna return bad for transactions here but we should probably just log it and handle this with the merchant in the backend
+        if (refundRecord.test == false) {
+            try {
+                await trmService.screenAddress(account);
+            } catch (error) {
+                return createErrorResponse(
+                    new InvalidInputError('Bad address for merchant: ' + merchant.id + ' ' + account)
+                );
+            }
         }
 
-        const singleUseKeypair = await generateSingleUseKeypairFromRefundRecord(refundRecord);
-
         try {
-            refundTransaction = await fetchRefundTransaction(
+            const singleUseKeypair = await generateSingleUseKeypairFromRecord(refundRecord);
+            gasKeypair = await fetchGasKeypair();
+
+            let refundTransaction = await fetchRefundTransaction(
                 refundRecord,
                 paymentRecord,
                 account,
@@ -146,74 +100,49 @@ export const refundTransaction = Sentry.AWSLambda.wrapHandler(
                 gasKeypair.publicKey.toBase58(),
                 axios
             );
-        } catch (error) {
-            return createErrorResponse(error);
-        }
 
-        try {
-            transaction = encodeTransaction(refundTransaction.transaction);
-        } catch (error) {
-            return createErrorResponse(error);
-        }
-
-        transaction.partialSign(gasKeypair);
-
-        const transactionSignature = transaction.signature;
-
-        if (transactionSignature == null) {
-            return createErrorResponse(new DependencyError('transaction signature null'));
-        }
-
-        try {
+            let transaction = encodeTransaction(refundTransaction.transaction);
+            transaction.partialSign(gasKeypair);
             verifyTransactionWithRecord(refundRecord, transaction, true);
-        } catch (error) {
-            return createErrorResponse(error);
-        }
 
-        const signatureBuffer = transactionSignature;
-
-        const signatureString = encodeBufferToBase58(signatureBuffer);
-
-        // We're gonna return bad for transactions here but we should probably just log it and handle this with the merchant in the backend
-        if (refundRecord.test == false) {
-            try {
-                await trmService.screenAddress(account);
-            } catch (error) {
-                Sentry.captureException(new Error('Bad address for merchant: ' + merchant.id + ' ' + account));
-                return createErrorResponse(
-                    new InvalidInputError('wallet address in not able to be used. contact the solana pay team.')
-                );
+            const transactionSignature = transaction.signature;
+            if (transactionSignature == null) {
+                throw new DependencyError('transaction signature null');
             }
-        }
 
-        try {
+            Sentry.captureEvent({
+                message: 'in refund-transaction verify tx w record',
+                level: 'info',
+            });
             await transactionRecordService.createTransactionRecord(
-                signatureString,
+                encodeBufferToBase58(transactionSignature),
                 TransactionType.refund,
                 null,
                 refundRecord.id
             );
+            const transactionBuffer = transaction.serialize({
+                verifySignatures: false,
+                requireAllSignatures: false,
+            });
+
+            Sentry.captureEvent({
+                message: 'refund-tx about to finalize',
+                level: 'info',
+            });
+            return {
+                statusCode: 200,
+                body: JSON.stringify(
+                    {
+                        transaction: transactionBuffer.toString('base64'),
+                        message: `Refunding customer ${refundRecord.usdcAmount.toFixed(2)} USDC`,
+                    },
+                    null,
+                    2
+                ),
+            };
         } catch (error) {
-            return createErrorResponse(error);
+            return await createErrorResponse(error);
         }
-
-        const transactionBuffer = transaction.serialize({
-            verifySignatures: false,
-            requireAllSignatures: false,
-        });
-        const transactionString = transactionBuffer.toString('base64');
-
-        return {
-            statusCode: 200,
-            body: JSON.stringify(
-                {
-                    transaction: transactionString,
-                    message: `Refunding customer ${refundRecord.usdcAmount.toFixed(2)} USDC`,
-                },
-                null,
-                2
-            ),
-        };
     },
     {
         rethrowAfterCapture: false,

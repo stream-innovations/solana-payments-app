@@ -1,5 +1,4 @@
-import { APIGatewayProxyResultV2, APIGatewayProxyEventV2 } from 'aws-lambda';
-import crypto from 'crypto-js';
+import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import axios from 'axios';
 
 function getRandomArbitrary(min: number, max: number): number {
@@ -16,21 +15,22 @@ export const payment = async (event: APIGatewayProxyEventV2): Promise<APIGateway
             url: 'http://localhost:4006/payment',
             method: 'POST',
             headers: {
-                'content-type': 'application/json',
                 'shopify-shop-domain': 'localhost:4004',
+                'shopify-request-id': '123',
+                'shopify-api-version': '2021-07',
             },
             data: JSON.stringify({
                 id: id,
                 gid: gid,
                 group: group,
-                amount: 4.2,
+                amount: 14.2,
                 currency: 'USD',
                 test: true,
                 merchant_locale: 'en',
                 payment_method: {
                     type: 'type',
                     data: {
-                        cancel_url: 'https://www.apple.com',
+                        cancel_url: 'localhost:4004/c1-7743a01d14a69841e687352c38c7a0e0',
                     },
                 },
                 proposed_at: '2021-08-10T18:02:00.000Z',

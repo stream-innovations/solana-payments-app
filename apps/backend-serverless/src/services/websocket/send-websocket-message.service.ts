@@ -1,17 +1,14 @@
-import { PrismaClient, WebsocketSession } from '@prisma/client';
+import { WebsocketSession } from '@prisma/client';
 import pkg from 'aws-sdk';
-import { WebsocketSessionQuery, WebsocketSessionService } from '../database/websocket.database.service.js';
-import { MissingEnvError } from '../../errors/missing-env.error.js';
 const { ApiGatewayManagementApi } = pkg;
 
 export interface WebSocketSessionFetcher<WebsocketQuery> {
     fetchWebsocketSessions: (query: WebsocketQuery) => Promise<WebsocketSession[]>;
 }
-
 export class WebSocketService<WebsocketQuery> {
-    private websockerSessions: WebsocketSession[] = [];
-    private loaded = false;
+    private websocketSessions: WebsocketSession[] = [];
     private apiGatewayManagementApi: pkg.ApiGatewayManagementApi;
+    private loaded = false;
 
     constructor(
         apiGatewayEndpoint: string,
@@ -22,17 +19,17 @@ export class WebSocketService<WebsocketQuery> {
     }
 
     private loadSessions = async (): Promise<void> => {
-        this.websockerSessions = await this.websocketSessionService.fetchWebsocketSessions(this.query);
-        console.log('this.websockerSessions: ', this.websockerSessions);
+        this.websocketSessions = await this.websocketSessionService.fetchWebsocketSessions(this.query);
         this.loaded = true;
     };
 
     private sendMessage = async (message: WebsocketMessage, payload: unknown): Promise<void> => {
+        // Log the message and payload being sent
         if (this.loaded === false) {
             await this.loadSessions();
         }
 
-        for (const websocketSession of this.websockerSessions) {
+        for (const websocketSession of this.websocketSessions) {
             try {
                 const postParams = {
                     Data: JSON.stringify({

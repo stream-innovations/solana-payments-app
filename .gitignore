@@ -4,8 +4,6 @@
 **/node_modules
 .pnp
 .pnp.js
-**/package-lock.json
-**/yarn.lock
 
 # testing
 **/coverage
@@ -17,7 +15,6 @@
 **/.build
 
 # misc
-*.pem
 .DS_Store
 
 # debug
@@ -34,6 +31,9 @@
 **/dist
 **/.serverless
 
+
+apps/**/pnpm-lock.yaml
+
 #packages-dist
 
 # General ignore rules for monorepos
@@ -45,3 +45,16 @@
 
 # Working notes
 working-notes.md
+
+.pnp.*
+.yarn/*
+.yarnrc
+!.yarn/cache/*
+!.yarn/patches/*
+!.yarn/plugins/*
+!.yarn/releases/*
+!.yarn/sdks/*
+!.yarn/versions/*
+
+
+**.pid

@@ -1,7 +1,7 @@
 import { Merchant } from '@prisma/client';
+import * as Sentry from '@sentry/serverless';
 import { ShopifyResponseError } from '../../errors/shopify-response.error.js';
 import { PaymentAppConfigureResponse } from '../../models/shopify-graphql-responses/payment-app-configure-response.model.js';
-import * as Sentry from '@sentry/serverless';
 
 export const validatePaymentAppConfigured = (
     paymentAppConfiguredResponse: PaymentAppConfigureResponse,
@@ -9,16 +9,12 @@ export const validatePaymentAppConfigured = (
 ) => {
     const userErrors = paymentAppConfiguredResponse.data.paymentsAppConfigure.userErrors;
 
-    console.log('user errors: ' + userErrors.length);
-
     if (userErrors.length > 0) {
         console.log(userErrors);
         const error = new ShopifyResponseError('user errors found.' + JSON.stringify(userErrors));
         Sentry.captureException(error);
         throw error;
     }
-
-    console.log('user errors: ' + userErrors.length);
 
     const paymentAppConfigured = paymentAppConfiguredResponse.data.paymentsAppConfigure.paymentsAppConfiguration;
 

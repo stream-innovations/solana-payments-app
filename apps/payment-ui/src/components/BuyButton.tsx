@@ -1,28 +1,45 @@
-import React, { useEffect, useState } from 'react';
-import { useWallet } from '@solana/wallet-adapter-react';
-import { useDispatch, useSelector } from 'react-redux';
-import axios from 'axios';
-import * as web3 from '@solana/web3.js';
+import * as Button from '@/components/Button';
+import { getPointsBalance } from '@/features/customer/customerSlice';
+import {
+    Notification,
+    NotificationType,
+    getConnectWalletNotification,
+    setNotification,
+} from '@/features/notification/notificationSlice';
+import { getLoyaltyDetails, getPaymentDetails, getPaymentId } from '@/features/payment-details/paymentDetailsSlice';
 import { resetSession } from '@/features/payment-session/paymentSessionSlice';
-import { buildPaymentTransactionRequestEndpoint } from '@/utility/endpoints.utility';
 import { AppDispatch } from '@/store';
-import { getPaymentId } from '@/features/payment-details/paymentDetailsSlice';
-import { Notification, NotificationType, getConnectWalletNotification, setNotification } from '@/features/notification/notificationSlice';
-import { setWalletLoading, stopWalletLoading, getIsWalletLoading } from '@/features/wallet/walletSlice';
+import { buildTransactionRequestEndpoint } from '@/utility/endpoints.utility';
+import { useWallet } from '@solana/wallet-adapter-react';
+import * as web3 from '@solana/web3.js';
+import axios from 'axios';
+import { useState } from 'react';
+import { useDispatch, useSelector } from 'react-redux';
 
 const BuyButton = () => {
     const paymentId = useSelector(getPaymentId);
-    const { publicKey, sendTransaction, signTransaction } = useWallet();
+    const { publicKey, sendTransaction } = useWallet();
     const dispatch = useDispatch<AppDispatch>();
-    const connectedWalletNotification = useSelector(getConnectWalletNotification)
-    const isLoading = useSelector(getIsWalletLoading)
+    const connectedWalletNotification = useSelector(getConnectWalletNotification);
+    const [walletLoading, setWalletLoading] = useState(false);
+    const pointsBalance = useSelector(getPointsBalance);
+    const loyaltyDetails = useSelector(getLoyaltyDetails);
+    const usdcCost = useSelector(getPaymentDetails)?.usdcSize;
 
-    const fetchAndSendTransaction = async () => {
-        const headers = {
-            'Content-Type': 'application/json',
+    const fetchAndSendTransaction = async (points: boolean = false) => {
+        const getErrorType = (error: any) => {
+            if (error instanceof Error) {
+                const message = error.message.toLowerCase();
+                if (message.includes('user rejected')) return Notification.declined;
+                if (message.includes('0x0') && message.includes('instruction 0')) return Notification.duplicatePayment;
+                if (message.includes('0x1') && message.includes('instruction 1')) return Notification.insufficentFunds;
+                if (message === 'Transaction string is null') return Notification.transactionRequestFailed;
+                if (message === 'Failed to parse transaction string') return Notification.transactionRequestFailed;
+            }
+            return Notification.simulatingIssue;
         };
-        
-        if ( paymentId == null ) {
+
+        if (paymentId == null) {
             dispatch(setNotification({ notification: Notification.noPayment, type: NotificationType.connectWallet }));
             return;
         }
@@ -32,105 +49,100 @@ const BuyButton = () => {
             return;
         }
 
-        const transactionRequestEndpoint = buildPaymentTransactionRequestEndpoint(paymentId)
+        const transactionRequestEndpoint = buildTransactionRequestEndpoint(paymentId, points);
 
-        let transactionString: string
-
-        dispatch(setWalletLoading())
+        setWalletLoading(true);
 
         try {
-
             const response = await axios.post(
                 transactionRequestEndpoint,
-                { account: publicKey },
-                { headers: headers }
+                { account: publicKey.toBase58() },
+                {
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                }
             );
 
-            transactionString = response.data.transaction
-        } catch (error) {
-            dispatch(stopWalletLoading())
-            dispatch(resetSession())
-            dispatch(setNotification({ notification: Notification.transactionRequestFailed, type: NotificationType.connectWallet }))
-            return;
-        }
+            const transactionString = response.data.transaction;
+            if (!transactionString) {
+                throw new Error('Transaction string is null');
+            }
 
-        if ( transactionString == null ) {
-            dispatch(stopWalletLoading())
-            dispatch(resetSession())
-            dispatch(setNotification({ notification: Notification.transactionRequestFailed, type: NotificationType.connectWallet }))
-            return;
-        }
+            let transaction: web3.Transaction;
 
-        let transaction: web3.Transaction;
+            try {
+                const buffer = Buffer.from(transactionString, 'base64');
+                transaction = web3.Transaction.from(buffer);
+            } catch (error) {
+                throw new Error('Failed to parse transaction string');
+            }
 
-        try {
-            
-            const buffer = Buffer.from(transactionString, 'base64');
-            transaction = web3.Transaction.from(buffer);
-
-        } catch (error) {
-            dispatch(stopWalletLoading())
-            dispatch(resetSession())
-            dispatch(setNotification({ notification: Notification.transactionRequestFailed, type: NotificationType.connectWallet }))
-            return
-        }
-
-        try {
-            // TODO: Use default RPC from wallet adapter
             const connection = new web3.Connection(
                 'https://rpc.helius.xyz/?api-key=5f70b753-57cb-422b-a018-d7df67b4470e'
             );
             await sendTransaction(transaction, connection);
         } catch (error) {
-
-            const declined = ( error instanceof Error && error.message.toLowerCase().includes('user rejected') )
-            const duplicatePayment = ( error instanceof Error && error.message.toLowerCase().includes('0x0') && error.message.toLowerCase().includes('instruction 0'))
-            const insufficientFunds = ( error instanceof Error && error.message.toLowerCase().includes('0x1') && error.message.toLowerCase().includes('instruction 1'))
-
-            if (declined) {
-                // The most important check, we can't detect this any other way
-                dispatch(setNotification({ notification: Notification.declined, type: NotificationType.connectWallet }));
-            } else if (duplicatePayment) {
-                // Could also be handled by a transaction simulation webhook message
-                dispatch(setNotification({ notification: Notification.duplicatePayment, type: NotificationType.connectWallet }));
-            } else if (insufficientFunds) {
-                // Shouldn't happen. We shouldn't let them submit a transaction if they don't have enough funds.
-                dispatch(setNotification({ notification: Notification.insufficentFunds, type: NotificationType.connectWallet }));
-            } else {
-                dispatch(setNotification({ notification: Notification.simulatingIssue, type: NotificationType.connectWallet }));
-            }   
-            
-            dispatch(resetSession())
-            dispatch(stopWalletLoading())
+            const errorType = getErrorType(error);
+            setWalletLoading(false);
+            dispatch(resetSession());
+            dispatch(
+                setNotification({
+                    notification: errorType,
+                    type: NotificationType.connectWallet,
+                })
+            );
             return;
         }
-
-
     };
 
     const isDisabled = () => {
-        if ( connectedWalletNotification == Notification.insufficentFunds ) {
-            return true
-        } else if ( paymentId == null ) {
-            return true
-        } else if ( isLoading ) {
-            return true
+        if (connectedWalletNotification == Notification.insufficentFunds) {
+            return true;
+        } else if (paymentId == null) {
+            return true;
+        } else if (walletLoading) {
+            return true;
         }
-    }
+    };
+
+    const pointsDisabled = () => {
+        if (!pointsBalance || !usdcCost) {
+            return true;
+        } else if (pointsBalance && usdcCost && pointsBalance < usdcCost * 100) {
+            return true;
+        } else if (paymentId == null) {
+            return true;
+        } else if (walletLoading) {
+            return true;
+        }
+    };
 
     return (
-        <button
-            disabled={isDisabled()}
-            onClick={async () => {
-                await fetchAndSendTransaction();
-            }}
-            className="btn w-full bg-black text-white py-4 pt-3 text-base rounded-md shadow-lg disabled:shadow-none font-semibold flex justify-center items-center normal-case disabled:bg-slate-200 disabled:text-slate-400"
-        >
-            <div className={`flex flex-row items-center justify-center`}>
-               { isLoading ? <span className="loading loading-spinner loading-sm mr-1" /> : <div /> }             
-                <div className='ml-1'>Buy now</div>
-            </div>
-        </button>
+        <div className="flex flex-col space-y-2">
+            {loyaltyDetails && loyaltyDetails.loyaltyProgram === 'points' && (
+                <Button.Primary
+                    disabled={pointsDisabled()}
+                    pending={walletLoading}
+                    onClick={async () => {
+                        await fetchAndSendTransaction(true);
+                    }}
+                    className="bg-purple-700 text-white w-full shadow-xl "
+                >
+                    {pointsDisabled() ? 'Need more points' : 'Buy with Points'}
+                </Button.Primary>
+            )}
+            <Button.Primary
+                disabled={isDisabled()}
+                pending={walletLoading}
+                onClick={async () => {
+                    await fetchAndSendTransaction();
+                }}
+                className="bg-black text-white w-full shadow-lg "
+            >
+                Buy now
+            </Button.Primary>
+        </div>
     );
 };
 

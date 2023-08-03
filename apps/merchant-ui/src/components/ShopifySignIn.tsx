@@ -9,7 +9,9 @@ export function ShopifySignIn(props: Props) {
     return (
         <button
             onClick={() => {
-                window.location.href = '/merchant';
+                process.env.NODE_ENV === 'development'
+                    ? (window.location.href = 'https://localhost:4004/install')
+                    : (window.location.href = '/merchant');
             }}
             className={twMerge(
                 'border-gray-300',
@@ -23,11 +25,11 @@ export function ShopifySignIn(props: Props) {
                 'items-center',
                 'justify-center',
                 'space-x-2',
-                props.className
+                props.className,
             )}
         >
             <img className="h-7 w-7" src="/shopify-logo.svg" alt="Shopify Logo" />
-            <p> Sign in with Shopify</p>
+            <p>Sign in with Shopify</p>
         </button>
     );
 }

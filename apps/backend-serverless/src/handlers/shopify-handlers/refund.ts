@@ -1,24 +1,15 @@
+import { PrismaClient } from '@prisma/client';
 import * as Sentry from '@sentry/serverless';
-import { APIGatewayProxyEvent, APIGatewayProxyResult } from 'aws-lambda';
-import {
-    ShopifyRefundInitiation,
-    parseAndValidateShopifyRefundInitiation,
-} from '../../models/shopify/process-refund.request.model.js';
-import { PrismaClient, RefundRecord, Merchant } from '@prisma/client';
-import { RefundRecordService } from '../../services/database/refund-record-service.database.service.js';
-import { MerchantService } from '../../services/database/merchant-service.database.service.js';
-import { generatePubkeyString } from '../../utilities/pubkeys.utility.js';
-import {
-    ErrorMessage,
-    ErrorType,
-    createErrorResponse,
-    errorResponse,
-} from '../../utilities/responses/error-response.utility.js';
-import { convertAmountAndCurrencyToUsdcSize } from '../../services/coin-gecko.service.js';
-import { InvalidInputError } from '../../errors/invalid-input.error.js';
-import { create } from 'lodash';
-import { MissingExpectedDatabaseRecordError } from '../../errors/missing-expected-database-record.error.js';
+import { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
 import axios from 'axios';
+import { InvalidInputError } from '../../errors/invalid-input.error.js';
+import { MissingExpectedDatabaseRecordError } from '../../errors/missing-expected-database-record.error.js';
+import { parseAndValidateShopifyRefundInitiation } from '../../models/shopify/process-refund.request.model.js';
+import { convertAmountAndCurrencyToUsdcSize } from '../../services/coin-gecko.service.js';
+import { MerchantService } from '../../services/database/merchant-service.database.service.js';
+import { RefundRecordService } from '../../services/database/refund-record-service.database.service.js';
+import { generatePubkeyString } from '../../utilities/pubkeys.utility.js';
+import { createErrorResponse } from '../../utilities/responses/error-response.utility.js';
 
 const prisma = new PrismaClient();
 
@@ -29,7 +20,15 @@ Sentry.AWSLambda.init({
 });
 
 export const refund = Sentry.AWSLambda.wrapHandler(
-    async (event: APIGatewayProxyEvent): Promise<APIGatewayProxyResult> => {
+    async (event: APIGatewayProxyEventV2): Promise<APIGatewayProxyResultV2> => {
+        Sentry.captureEvent({
+            message: 'In refund',
+            level: 'info',
+            extra: {
+                event,
+            },
+        });
+
         const prisma = new PrismaClient();
         const refundRecordService = new RefundRecordService(prisma);
         const merchantService = new MerchantService(prisma);
@@ -44,68 +43,50 @@ export const refund = Sentry.AWSLambda.wrapHandler(
             return createErrorResponse(new InvalidInputError('shopify domain header'));
         }
 
-        let merchant: Merchant | null;
-
         try {
-            merchant = await merchantService.getMerchant({ shop: shop });
-        } catch (error) {
-            return createErrorResponse(error);
-        }
+            const merchant = await merchantService.getMerchant({ shop: shop });
+            const refundInitiation = parseAndValidateShopifyRefundInitiation(JSON.parse(event.body));
 
-        if (merchant == null) {
-            return createErrorResponse(new MissingExpectedDatabaseRecordError('merchant'));
-        }
+            try {
+                await refundRecordService.getRefundRecord({
+                    shopId: refundInitiation.id,
+                });
+            } catch (error) {
+                if (error instanceof MissingExpectedDatabaseRecordError) {
+                    let usdcSize: number;
 
-        let refundInitiation: ShopifyRefundInitiation;
-        try {
-            refundInitiation = parseAndValidateShopifyRefundInitiation(JSON.parse(event.body));
-        } catch (error) {
-            return createErrorResponse(error);
-        }
+                    if (refundInitiation.test) {
+                        usdcSize = 0;
+                    } else {
+                        usdcSize = await convertAmountAndCurrencyToUsdcSize(
+                            refundInitiation.amount,
+                            refundInitiation.currency,
+                            axios,
+                        );
+                    }
 
-        let refundRecord: RefundRecord | null;
-
-        try {
-            refundRecord = await refundRecordService.getRefundRecord({
-                shopId: refundInitiation.id,
-            });
-        } catch (error) {
-            return createErrorResponse(error);
-        }
-
-        try {
-            if (refundRecord == null) {
-                let usdcSize: number;
-
-                if (refundInitiation.test) {
-                    usdcSize = 0.000001;
-                } else {
-                    usdcSize = await convertAmountAndCurrencyToUsdcSize(
-                        refundInitiation.amount,
-                        refundInitiation.currency,
-                        axios
+                    const newRefundRecordId = await generatePubkeyString();
+                    await refundRecordService.createRefundRecord(
+                        newRefundRecordId,
+                        refundInitiation,
+                        merchant,
+                        usdcSize,
                     );
+                } else {
+                    throw error;
                 }
-
-                const newRefundRecordId = await generatePubkeyString();
-                refundRecord = await refundRecordService.createRefundRecord(
-                    newRefundRecordId,
-                    refundInitiation,
-                    merchant,
-                    usdcSize
-                );
             }
+
+            // We return 201 status code here per shopify's documentation:: https://shopify.dev/docs/apps/payments/implementation/process-a-refund#initiate-the-flow
+            return {
+                statusCode: 201,
+                body: JSON.stringify({}),
+            };
         } catch (error) {
             return createErrorResponse(error);
         }
-
-        // We return 201 status code here per shopify's documentation:: https://shopify.dev/docs/apps/payments/implementation/process-a-refund#initiate-the-flow
-        return {
-            statusCode: 201,
-            body: JSON.stringify({}),
-        };
     },
     {
         rethrowAfterCapture: false,
-    }
+    },
 );

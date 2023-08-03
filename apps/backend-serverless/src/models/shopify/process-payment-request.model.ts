@@ -1,5 +1,5 @@
-import { object, string, number, InferType, bool } from 'yup';
-import { parseAndValidate } from '../../utilities/yup.utility.js';
+import { InferType, bool, number, object, string } from 'yup';
+import { parseAndValidateStrict } from '../../utilities/yup.utility.js';
 /*
     SPEC: https://shopify.dev/docs/apps/payments/implementation/process-a-payment/offsite
 */
@@ -17,12 +17,25 @@ const customerAddressSchema = object().shape({
     company: string().optional(),
 });
 
+const customerShippingSchema = object().shape({
+    given_name: string().optional(),
+    family_name: string().optional(),
+    line1: string().optional(),
+    line2: string().optional(),
+    city: string().optional(),
+    postal_code: string().optional(),
+    province: string().optional(),
+    country_code: string().optional(),
+    phone_number: string().optional(),
+    company: string().optional(),
+});
+
 const shopifyPaymentInitiationCustomerScheme = object().shape({
     email: string().optional(),
     phone_number: string().optional(),
     locale: string().required(),
     billing_address: customerAddressSchema.required(),
-    shipping_address: customerAddressSchema.required(),
+    shipping_address: customerShippingSchema.optional(),
 });
 
 const paymentMethodDataSchema = object().shape({
@@ -33,6 +46,22 @@ const paymentMethodSchema = object().shape({
     type: string().required(),
     data: paymentMethodDataSchema.required(),
 });
+
+const parseParameters = params => {
+    return {
+        id: params.id,
+        gid: params.gid,
+        group: params.group,
+        amount: parseFloat(params.amount), // convert amount string to number
+        currency: params.currency,
+        test: params.test, // convert 'true' or 'false' string to boolean
+        merchant_locale: params.merchant_locale,
+        payment_method: params.payment_method, // assuming paymentMethodSchema will handle this
+        proposed_at: params.proposed_at,
+        kind: params.kind,
+        customer: params.customer, // assuming shopifyPaymentInitiationCustomerScheme will handle this
+    };
+};
 
 export const shopifyPaymentInitiationScheme = object().shape({
     id: string().required(),
@@ -53,8 +82,8 @@ export type ShopifyPaymentInitiation = InferType<typeof shopifyPaymentInitiation
 export const parseAndValidateShopifyPaymentInitiation = (
     paymentInitiationRequestBody: unknown
 ): ShopifyPaymentInitiation => {
-    return parseAndValidate(
-        paymentInitiationRequestBody,
+    return parseAndValidateStrict(
+        parseParameters(paymentInitiationRequestBody),
         shopifyPaymentInitiationScheme,
         'Could not parse the Shopify payment initiation request. Unknown Reason.'
     );

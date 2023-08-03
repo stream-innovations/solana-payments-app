@@ -1,3 +1,4 @@
+import * as Button from '@/components/Button';
 import { PaginatedTable } from '@/components/PaginatedTable';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/components/ui/use-toast';
@@ -14,7 +15,6 @@ import { format } from 'date-fns';
 import { useEffect, useRef, useState } from 'react';
 import { MdSyncProblem } from 'react-icons/md';
 import { twMerge } from 'tailwind-merge';
-import * as Button from './Button';
 import { Close } from './icons/Close';
 
 interface Props {
@@ -172,6 +172,7 @@ export function OpenRefunds(props: Props) {
             while (denyPendingRef.current) {
                 const statusResponse = await fetch(`${API_ENDPOINTS.refundStatus}?shopId=${refundId}`, {
                     headers: headers,
+                    credentials: 'include',
                 });
                 const statusData = await statusResponse.json();
                 if (!statusResponse.ok) {
@@ -222,7 +223,7 @@ export function OpenRefunds(props: Props) {
             <div className={props.className}>
                 <div className="flex flex-col justify-center h-full text-red-700 items-center space-y-4">
                     <MdSyncProblem size={36} />
-                    <p>We're having trouble loading your closed refunds data</p>
+                    <p>We&apos;re having trouble loading your Open refunds data</p>
                 </div>
             </div>
         );
