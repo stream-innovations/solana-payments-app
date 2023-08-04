@@ -5,33 +5,56 @@ import { USDC_MINT } from '../../configs/tokens.config.js';
 import { MissingEnvError } from '../../errors/missing-env.error.js';
 import { MerchantService } from '../../services/database/merchant-service.database.service.js';
 import { fetchBalance } from '../../services/helius.service.js';
+import { ProductDetail, createProductsNftResponse } from './create-products-response.utility.js';
 
 export interface CustomerResponse {
     amountSpent: number;
     tier: Tier | null;
+    nextTier: Tier | null;
+    isFirstTier: boolean;
     customerOwns: boolean;
     points: number | null;
     usdc: number | null;
-    nextTier: Tier | null;
-    // productNFTs: array().of(productNFTSchema).required(),
+    customerNfts: ProductDetail[];
 }
 
 async function determineTier(
     amountSpent: number,
     tiers: Tier[],
     paymentRecord: PaymentRecord
-): Promise<{ currentTier: Tier | null; nextPossibleTier: Tier | null }> {
+): Promise<{ currentTier: Tier | null; nextPossibleTier: Tier | null; isFirstTier: boolean }> {
     let currentTier: Tier | null = null;
     let nextPossibleTier: Tier | null = null;
+    let isFirstTier: boolean = false; // Adding new variable to track if the next tier is the first one
+    let amountToSpend = paymentRecord.amount;
+
+    // Sort the tiers array in ascending order of thresholds.
+    tiers.sort((a, b) => a.threshold - b.threshold);
 
     for (let i = 0; i < tiers.length; i++) {
+        // console.log('chekcing if 0', amountSpent, amountToSpend, tiers[i].threshold, tiers[i].active, currentTier);
+        // console.log('checking logic', amountSpent >= tiers[i].threshold, tiers[i].active, currentTier === null);
         if (amountSpent >= tiers[i].threshold && tiers[i].active) {
             currentTier = tiers[i];
         }
 
         // Checking if the user will reach a higher tier after the payment.
+        // console.log(
+        //     'checking if statements',
+        //     amountSpent,
+        //     amountToSpend,
+        //     tiers[i].threshold,
+        //     tiers[i].active,
+        //     currentTier
+        // );
+        // console.log(
+        //     'logic',
+        //     amountSpent + amountToSpend >= tiers[i].threshold,
+        //     tiers[i].active,
+        //     currentTier === null || tiers[i].threshold > currentTier.threshold
+        // );
         if (
-            amountSpent + paymentRecord.amount >= tiers[i].threshold &&
+            amountSpent + amountToSpend >= tiers[i].threshold &&
             tiers[i].active &&
             (currentTier === null || tiers[i].threshold > currentTier.threshold)
         ) {
@@ -44,7 +67,13 @@ async function determineTier(
         nextPossibleTier = null;
     }
 
-    return { currentTier, nextPossibleTier };
+    // Check if the next possible tier is the first tier the customer will achieve
+    if (currentTier === null && nextPossibleTier !== null) {
+        isFirstTier = true;
+    }
+    // console.log('FINAL TIERSf', currentTier, nextPossibleTier, isFirstTier);
+
+    return { currentTier, nextPossibleTier, isFirstTier };
 }
 
 async function customerOwnsTier(customerWallet: string, tierMint: string): Promise<boolean> {
@@ -82,25 +111,37 @@ export const createCustomerResponse = async (
             amountSpent: 0,
             tier: null,
             customerOwns: false,
+            isFirstTier: false,
             points: null,
             usdc: usdcBalance,
             nextTier: null,
+            customerNfts: [],
         };
     }
 
     let points = merchant.pointsMint ? await fetchBalance(customerWallet, merchant.pointsMint) : null;
 
     let tiers = await merchantService.getTiers(merchant.id);
-    const { currentTier, nextPossibleTier } = await determineTier(customer.amountSpent, tiers, paymentRecord);
+    const { currentTier, nextPossibleTier, isFirstTier } = await determineTier(
+        customer.amountSpent,
+        tiers,
+        paymentRecord
+    );
     let customerOwns =
         currentTier && currentTier.mint ? await customerOwnsTier(customerWallet, currentTier.mint) : false;
 
+    console.log('tier status', currentTier, nextPossibleTier, isFirstTier, customerOwns);
+    let customerNfts = (await createProductsNftResponse(merchant)).customerView[customerWallet];
+
+    console.log('customer nfts', customerNfts);
     return {
         amountSpent: customer.amountSpent,
         tier: currentTier,
+        nextTier: nextPossibleTier,
+        isFirstTier: isFirstTier,
         customerOwns: customerOwns,
         points: points,
         usdc: usdcBalance,
-        nextTier: nextPossibleTier,
+        customerNfts: customerNfts,
     };
 };

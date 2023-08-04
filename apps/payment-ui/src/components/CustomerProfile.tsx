@@ -8,7 +8,13 @@ import {
     DialogTitle,
     DialogTrigger,
 } from '@/components/ui/dialog';
-import { getBalance, getPointsBalance } from '@/features/customer/customerSlice';
+import {
+    getAmountSpent,
+    getBalance,
+    getCustomerNfts,
+    getPointsBalance,
+    getTier,
+} from '@/features/customer/customerSlice';
 import { useWallet } from '@solana/wallet-adapter-react';
 import * as web3 from '@solana/web3.js';
 import Image from 'next/image';
@@ -25,6 +31,9 @@ export function CustomerProfile(props: Props) {
 
     const usdcBalance = useSelector(getBalance);
     const pointsBalance = useSelector(getPointsBalance);
+    const customerTier = useSelector(getTier);
+    const customerNfts = useSelector(getCustomerNfts);
+    const amountSpent = useSelector(getAmountSpent);
     const [copied, setCopied] = useState(false);
 
     const walletDisplayString = (pubkey: web3.PublicKey | null) => {
@@ -65,8 +74,35 @@ export function CustomerProfile(props: Props) {
                             {usdcBalance} USDC
                         </DialogDescription>
                         <DialogDescription className="pt-2 text-gray-700 text-md font-normal">
-                            {pointsBalance} Points
+                            {pointsBalance === null ? 0 : pointsBalance} Points
                         </DialogDescription>
+                        {customerTier && (
+                            <DialogDescription className="pt-2 text-gray-700 text-md font-normal">
+                                {customerTier.name} Tier
+                            </DialogDescription>
+                        )}
+                        {amountSpent && (
+                            <DialogDescription className="pt-2 text-gray-700 text-md font-normal">
+                                ${amountSpent} Spent
+                            </DialogDescription>
+                        )}
+                        {customerNfts && (
+                            <DialogDescription className="pt-2 text-gray-700 text-md font-normal text-center">
+                                <div>
+                                    <div className="flex flex-row ">
+                                        {customerNfts.map(product => (
+                                            <Image
+                                                key={product.id}
+                                                src={product.image}
+                                                alt={product.name}
+                                                width={50}
+                                                height={50}
+                                            />
+                                        ))}
+                                    </div>
+                                </div>
+                            </DialogDescription>
+                        )}
                     </div>
                 </DialogHeader>
                 <DialogFooter className="pt-12 pb-6">
