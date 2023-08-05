@@ -9,10 +9,10 @@ provider:
       allowedOrigins:
         - http://localhost:3005
         - http://localhost:3001
-        - https://merchant.solanapay.com
-        - https://merchant-staging.solanapay.com
-        - https://pay.solanapay.com
-        - https://pay-staging.solanapay.com
+        - https://merchant.solanapayments.app
+        - https://merchant-staging.streampayments.app
+        - https://pay.streampayments.app
+        - https://pay-staging.streampayments.app
       allowedHeaders:
         - Content-Type
         - Authorization

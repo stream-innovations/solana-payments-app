@@ -50,7 +50,7 @@ const WalletContext: FC<{ children: ReactNode }> = ({ children }) => {
                 addressSelector: createDefaultAddressSelector(),
                 appIdentity: {
                     name: 'Solana Pay Payment Portal',
-                    uri: 'https://pay.solanapay.com',
+                    uri: 'https://pay.streampayments.app',
                     icon: '/favicon.ico',
                 },
                 authorizationResultCache: createDefaultAuthorizationResultCache(),

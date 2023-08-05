@@ -1,12 +1,12 @@
-# Solana Payments App
+# **Stream**Payments App
 
-This project allows Shopify merchants to accept crypto through their shopify store, and customers to purchase products using crypto.
+This project allows Shopify and Medusa (developer construction) merchants to accept crypto through their shopify medusa store, and customers to purchase products using cryptocurrecies and USDC and EURC stablecoins.
 
-[Visit Documentation](https://commercedocs.solanapay.com)
+[Visit Documentation](https://commerce.docs.streampayments.app)
 
-[Test Payment flow](solanatest8.myshopify.com)
+[Test Payment flow](solanatest8.myshopify.com) 
 
-[Test Merchant Flow](merchant-staging.solanapay.com)
+[Test Merchant Flow](merchant-staging.streampayments.app)
 
 # Local Development
 
@@ -36,7 +36,7 @@ These steps will get you up and running with a local dev environment, and you ca
 Installation:
 
 ```
-git clone https://github.com/solana-labs/solana-payments-app
+git clone https://github.com/stream-innovations/stream-payments-app
 yarn install
 yarn setup:env
 ```

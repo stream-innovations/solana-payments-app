@@ -1,5 +1,5 @@
 {
-    "name": "solana-payments-app",
+    "name": "stream-payments-app",
     "version": "1.0.0",
     "private": true,
     "workspaces": {
