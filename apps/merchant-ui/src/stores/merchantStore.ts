@@ -31,34 +31,6 @@ export interface LoyaltyDetails {
     products: Product[];
     tiers: Tier[];
 }
-
-interface ProductDetail {
-    id: string;
-    name: string;
-    image: string;
-    description: string;
-    creators: string[];
-    count: number; // Add this line
-}
-
-interface ProductView {
-    productDetails: ProductDetail;
-    owners: string[];
-}
-
-interface CustomerView extends Array<ProductDetail> {}
-
-interface ProductsNftResponse {
-    count: number;
-    owners: string[];
-    productView: Record<string, ProductView>;
-    customerView: Record<string, CustomerView>;
-}
-
-interface LoyaltyInfo {
-    productNfts: ProductsNftResponse;
-}
-
 interface MerchantInfo {
     shop: string;
     name: string;
@@ -78,6 +50,38 @@ type MerchantStore = {
     getMerchantInfo: () => Promise<void>;
 };
 
+export interface ProductDetail {
+    id: string;
+    name: string;
+    image: string;
+    description: string;
+    creators: string[];
+    count: number; // Add this line
+}
+
+export interface OwnerInfo {
+    owner: string;
+    count: number;
+}
+
+interface ProductView {
+    productDetails: ProductDetail;
+    owners: OwnerInfo[];
+}
+
+interface CustomerView extends Array<ProductDetail> {}
+
+interface ProductsNftResponse {
+    count: number;
+    owners: string[];
+    productView: Record<string, ProductView>;
+    customerView: Record<string, CustomerView>;
+}
+
+interface LoyaltyInfo {
+    productNfts: ProductsNftResponse;
+}
+
 type LoyaltyStore = {
     loyaltyData: RE.Result<LoyaltyInfo>;
     getLoyaltyData: () => Promise<void>;
@@ -92,8 +96,6 @@ export const useLoyaltyStore = create<LoyaltyStore>(set => ({
                 credentials: 'include',
             });
             const loyaltyData = await response.json();
-            console.log('got back json', loyaltyData);
-            console.log('does product nfts exist', loyaltyData.productNfts);
 
             set({
                 loyaltyData: RE.ok({
@@ -101,7 +103,6 @@ export const useLoyaltyStore = create<LoyaltyStore>(set => ({
                 }),
             });
         } catch (error) {
-            console.log('Failed to fetch loyalty info', error);
             set({ loyaltyData: RE.failed(new Error('Failed to fetch loyalty info')) });
         }
     },
@@ -134,7 +135,6 @@ export const useMerchantStore = create<MerchantStore>(set => ({
                 }),
             });
         } catch (error) {
-            console.log('Failed to fetch merchant info', error);
             set({ merchantInfo: RE.failed(new Error('Failed to fetch merchant info')) });
         }
     },

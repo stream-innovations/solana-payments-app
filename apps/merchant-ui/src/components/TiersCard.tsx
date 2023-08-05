@@ -129,6 +129,7 @@ export function TiersCard(props: Props) {
                 tiers: {
                     ...newTier,
                     ...(data.mintAddress && { mint: data.mintAddress }),
+                    active: true,
                 },
             });
 
@@ -216,23 +217,20 @@ export function TiersCard(props: Props) {
         );
     } else if (merchantInfo.data.loyalty.loyaltyProgram != 'tiers') {
         return (
-            <Card className="w-[400px]">
-                <CardHeader>
-                    <CardTitle>Select Tiers Loyalty Program</CardTitle>
+            <Card className="w-max flex flex-col items-center">
+                <CardHeader className="flex flex-col items-center">
+                    <CardTitle>Tiered Discounts</CardTitle>
                     <CardDescription>Reward discounts to returning customers</CardDescription>
                 </CardHeader>
-                <CardFooter className="flex justify-between">
-                    {!merchantInfo.data.loyalty.tiers.length > 0 ? (
+                <CardFooter className="flex justify-between flex-col space-y-2">
+                    {!(merchantInfo.data.loyalty.tiers.length > 0) ? (
                         <Button onClick={selectLoyaltyProgram}>Start the Program</Button>
                     ) : (
                         <Button onClick={selectLoyaltyProgram} pending={loading}>
                             Restart the Program
                         </Button>
                     )}
-
-                    <Button variant="outline" onClick={disconnect}>
-                        Disconnect Wallet
-                    </Button>
+                    <p className="text-xs">(Disables Points)</p>
                 </CardFooter>
             </Card>
         );
@@ -246,6 +244,8 @@ export function TiersCard(props: Props) {
                             <TableHead>Tier</TableHead>
                             <TableHead>$ Threshold</TableHead>
                             <TableHead>% Back</TableHead>
+                            <TableHead>Active</TableHead>
+                            <TableHead>Frozen</TableHead>
                             <TableHead></TableHead>
                         </TableRow>
                     </TableHeader>
@@ -307,6 +307,12 @@ export function TiersCard(props: Props) {
                                             tier.discount
                                         )}
                                     </TableCell>
+                                    <TableCell>
+                                        <Switch checked={tier.active} onCheckedChange={() => handleToggle(tier.id)} />
+                                    </TableCell>
+                                    <TableCell>
+                                        <Switch checked={true} />
+                                    </TableCell>
                                     <TableCell className="flex flex-row space-x-1">
                                         {editing === tier.id ? (
                                             <Button variant="outline" onClick={() => handleSave(tier.id)}>
@@ -327,9 +333,6 @@ export function TiersCard(props: Props) {
                                                 Edit
                                             </Button>
                                         )}
-                                    </TableCell>
-                                    <TableCell>
-                                        <Switch checked={tier.active} onCheckedChange={() => handleToggle(tier.id)} />
                                     </TableCell>
                                 </TableRow>
                             ))}
@@ -368,6 +371,8 @@ export function TiersCard(props: Props) {
                                     }}
                                 />
                             </TableCell>
+                            <TableCell></TableCell>
+                            <TableCell></TableCell>
                             <TableCell className="flex flex-row space-x-1">
                                 <Button
                                     variant="outline"

@@ -1,6 +1,6 @@
 import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { isOk } from '@/lib/Result';
-import { useLoyaltyStore } from '@/stores/merchantStore';
+import { ProductDetail, useLoyaltyStore } from '@/stores/merchantStore';
 import Image from 'next/image';
 
 export function CustomerViewTable() {
@@ -28,7 +28,7 @@ export function CustomerViewTable() {
                             </TableCell>
                             <TableCell>{products.length}</TableCell>
                             <TableCell className="flex flex-row">
-                                {products.map(product => (
+                                {products.map((product: ProductDetail) => (
                                     <Image
                                         key={product.id}
                                         src={product.image}

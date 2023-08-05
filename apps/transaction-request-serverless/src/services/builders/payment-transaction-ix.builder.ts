@@ -2,6 +2,7 @@ import {
     createAssociatedTokenAccountInstruction,
     createBurnInstruction,
     createCloseAccountInstruction,
+    createFreezeAccountInstruction,
     createMintToInstruction,
     getAccount,
     getAssociatedTokenAddress,
@@ -159,7 +160,7 @@ export class PaymentTransactionBuilder {
                 this.customerOwnsTier
             ) {
                 receivingQuantity = Math.ceil((receivingQuantity * (100 - this.currentDiscount)) / 100);
-                console.log('after discoutn', receivingQuantity);
+                // console.log('after discoutn', receivingQuantity);
             }
             if (this.sendingToken.toBase58() != this.receivingToken.toBase58()) {
                 swapIxs = await createSwapIx({
@@ -226,6 +227,9 @@ export class PaymentTransactionBuilder {
                 transaction = transaction.add(
                     createMintToInstruction(this.nextTier, newCustomerTokenAddress, this.feePayer, 1)
                 );
+                transaction = transaction.add(
+                    createFreezeAccountInstruction(newCustomerTokenAddress, this.nextTier, this.feePayer)
+                );
             } else if (this.currentTier && !this.nextTier && !this.customerOwnsTier) {
                 let newCustomerTokenAddress = await getAssociatedTokenAddress(this.currentTier, this.sender);
 
@@ -240,6 +244,10 @@ export class PaymentTransactionBuilder {
 
                 transaction = transaction.add(
                     createMintToInstruction(this.currentTier, newCustomerTokenAddress, this.feePayer, 1)
+                );
+
+                transaction = transaction.add(
+                    createFreezeAccountInstruction(newCustomerTokenAddress, this.currentTier, this.feePayer)
                 );
             } else {
                 console.log('hit else case');

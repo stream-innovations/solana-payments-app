@@ -30,13 +30,18 @@ export const PayToLabel = () => {
     const calculateDiscount = (cart: number, discountRate: number) => (discountRate * cart) / 100;
 
     useEffect(() => {
-        if (customerTier !== null && paymentDetails !== null) {
-            let cart = Number(paymentDetails.totalAmountFiatDisplay.substring(1));
+        if (paymentDetails !== null) {
+            let cart = Number(paymentDetails.usdcSize);
             setCart(cart);
-            setDiscount(calculateDiscount(cart, customerTier.discount));
             setIsLoading(false);
         }
-    }, [customerTier, paymentDetails]);
+    }, [paymentDetails]);
+
+    useEffect(() => {
+        if (customerTier !== null && cart > 0) {
+            setDiscount(calculateDiscount(cart, customerTier.discount));
+        }
+    }, [customerTier, cart]);
 
     function calculateFinalAmount(): number {
         if (!loyaltyDetails || !customer || !paymentDetails || !customerTier) {
@@ -49,17 +54,6 @@ export const PayToLabel = () => {
             return paymentDetails.usdcSize;
         }
     }
-
-    console.log(
-        'tier details',
-        loyaltyDetails,
-        customerTier,
-        customerNextTier,
-        discount,
-        customer,
-        paymentDetails,
-        productDetails
-    );
 
     const showPointsBack = loyaltyDetails?.loyaltyProgram === 'points';
     const hasProductDetails = productDetails.length > 0;
@@ -101,9 +95,19 @@ export const PayToLabel = () => {
                     <div>
                         <p className="">NFT Rewards</p>
                         <div className="flex flex-row ">
-                            {productDetails.map(product => (
-                                <Image key={product.id} src={product.image} alt={product.name} width={50} height={50} />
-                            ))}
+                            {productDetails.map(
+                                product =>
+                                    product.image &&
+                                    product.name && (
+                                        <Image
+                                            key={product.id}
+                                            src={product.image}
+                                            alt={product.name}
+                                            width={50}
+                                            height={50}
+                                        />
+                                    )
+                            )}
                         </div>
                     </div>
                 )}
